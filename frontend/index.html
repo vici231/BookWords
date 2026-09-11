@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>刊见单词 Bookwords</title>
+  <meta name="theme-color" content="#1772f6">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-theme="paper" class="is-home">
+
+  <!-- 顶栏 -->
+  <header class="topbar">
+    <button class="brand brand-home" type="button" data-view="home-view" aria-label="返回首页">
+      <span class="brand-mark" aria-hidden="true"><img src="assets/ui/bookwords-logo.png" alt=""></span>
+      <h1>刊见单词 <span class="brand-en">BOOKWORDS</span></h1>
+      <span class="version" title="版本 1.02">v1.02</span>
+    </button>
+    <div class="topbar-right">
+      <nav class="main-nav" aria-label="主导航">
+        <button class="nav-item" type="button" data-view="search-view">词库</button>
+        <button class="nav-item" type="button" data-view="wordbook-view">单词本</button>
+        <button class="nav-item" type="button" data-view="story-pool-view">词汇池</button>
+        <button class="nav-item" type="button" data-view="story-book-view">知乎英语日报</button>
+        <button class="nav-item" type="button" data-view="daily-view">打卡</button>
+        <button class="nav-item" type="button" data-view="profile-view">我的</button>
+        <button class="nav-item" type="button" data-view="about-view">关于</button>
+      </nav>
+      <button id="btn-settings" class="btn-ghost settings-trigger" type="button"><span aria-hidden="true">⚙</span> 系统设置</button>
+    </div>
+  </header>
+
+  <main class="app-shell">
+
+    <aside class="app-sidebar" aria-label="刊见单词侧边导航">
+      <button class="sidebar-brand brand-home" type="button" data-view="home-view" aria-label="返回首页"><span class="sidebar-brand-mark" aria-hidden="true"><img src="assets/ui/bookwords-logo.png" alt=""></span><span><strong>刊见单词</strong><small>BOOKWORDS</small></span></button>
+      <nav class="sidebar-nav" aria-label="主要功能">
+        <button class="sidebar-item" type="button" data-view="search-view"><span class="sidebar-icon sidebar-icon-image"><img src="assets/ui/sidebar/word.png" alt=""></span><span>搜索词库</span></button>
+        <button class="sidebar-item" type="button" data-view="wordbook-view"><span class="sidebar-icon sidebar-icon-image"><img src="assets/ui/sidebar/course.png" alt=""></span><span>单词本</span></button>
+        <button class="sidebar-item" type="button" data-view="story-pool-view"><span class="sidebar-icon sidebar-icon-image"><img src="assets/ui/sidebar/speaking.png" alt=""></span><span>词汇池</span></button>
+        <button class="sidebar-item" type="button" data-view="story-book-view"><span class="sidebar-icon sidebar-icon-image"><img src="assets/ui/sidebar/reading.png" alt=""></span><span>知乎英语日报</span></button>
+        <button class="sidebar-item" type="button" data-view="daily-view"><span class="sidebar-icon sidebar-icon-image"><img src="assets/ui/sidebar/home.png" alt=""></span><span>每日打卡</span></button>
+        <button class="sidebar-item" type="button" data-view="about-view"><span class="sidebar-icon">✓</span><span>关于项目</span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <button class="sidebar-item" type="button" data-view="profile-view"><span class="sidebar-icon">●</span><span>个人信息</span></button>
+        <button id="sidebar-settings" class="sidebar-item" type="button"><span class="sidebar-icon">⚙</span><span>设置</span></button>
+        <div class="sidebar-profile"><span class="sidebar-avatar">学</span><span><strong id="sidebar-profile-name">刊见学习者</strong><small>本地学习空间</small></span></div>
+      </div>
+    </aside>
+
+    <!-- 首页：先从这里进入主界面 -->
+    <section id="home-view" class="view home-view active">
+      <div class="home-hero-v3"><div class="home-hero-copy"><p class="eyebrow">WORD JOURNAL · ZHIHU ENGLISH DAILY</p><h2>把生词，读成<br><em>你真正关心的事。</em></h2><p class="home-copy">从知乎的问题与知识出发，挑选今天想记住的单词，生成一篇有观点、有场景、适合分栏阅读的英文日报。</p><div class="home-badges"><span>知乎知识改写</span><span>目标词加粗</span><span>分栏阅读</span></div><div class="home-actions"><button class="btn-primary view-link" type="button" data-view="story-pool-view">开始今日学习 <span class="btn-arrow">→</span></button><span class="home-hint">每篇 3–20 个单词 · 约 8 分钟</span></div></div><div class="home-hero-visual" aria-hidden="true"><div class="hero-orbit"></div><div class="hero-card hero-card-back"><span>知乎英语日报</span><b>DAILY</b></div><div class="hero-card hero-card-front"><small>ISSUE 09 · TODAY</small><strong>Why do<br>we remember?</strong><i>READ · PRACTICE · REPEAT</i></div><img src="assets/ui/editor.png" alt=""></div></div>
+      <div class="home-highlight-v3"><div><span class="highlight-dot">01</span><strong>选一个知乎问题</strong><small>热榜 · 故事 · 知识</small></div><div><span class="highlight-dot">02</span><strong>生成学习日报</strong><small>科普 · 冷知识 · 轻娱乐</small></div><div><span class="highlight-dot">03</span><strong>读完马上练习</strong><small>目标词填空与复习</small></div><div class="highlight-progress"><span>本周学习进度</span><strong>42%</strong><div><i style="width:42%"></i></div></div></div>
+      <div class="home-cards-v3"><button class="home-card home-card-v3 view-link" data-view="search-view"><span class="home-card-index">01</span><span class="home-card-icon">⌕</span><strong>搜索词库</strong><small>按难度与词性找到下一组目标词</small><span class="home-card-arrow">↗</span></button><button class="home-card home-card-v3 view-link" data-view="story-pool-view"><span class="home-card-index">02</span><span class="home-card-icon">▦</span><strong>词汇池</strong><small>选词、生成文章并直接完成练习</small><span class="home-card-arrow">↗</span></button><button class="home-card home-card-v3 view-link" data-view="daily-view"><span class="home-card-index">03</span><span class="home-card-icon">✓</span><strong>每日打卡</strong><small>记录今天的阅读与学习节奏</small><span class="home-card-arrow">↗</span></button><button class="home-card home-card-v3 view-link" data-view="story-book-view"><span class="home-card-index">04</span><span class="home-card-icon">▤</span><strong>刊文阅读</strong><small>像读杂志一样翻阅每一期内容</small><span class="home-card-arrow">↗</span></button></div>
+    </section>
+    <!-- 单词本 -->
+    <section id="wordbook-view" class="view wordbook-view" hidden>
+      <div class="view-head">
+        <button class="btn-ghost view-link" type="button" data-view="search-view">去搜索词库</button>
+      </div>
+      <div class="wordbook-summary">
+        <div class="wordbook-cover" aria-hidden="true"><span>WORD</span><b>BOOK</b><i></i></div>
+        <div class="wordbook-summary-main">
+          <p class="wordbook-summary-kicker">MY COLLECTION</p>
+          <div class="wordbook-summary-title">收藏的单词</div>
+          <div class="wordbook-total">单词数：<strong id="wordbook-count">0</strong></div>
+          <div class="wordbook-summary-actions">
+            <button id="btn-wordbook-study" class="btn-wordbook-export view-link" type="button" data-view="story-pool-view">学习</button>
+            <button id="btn-wordbook-export" class="btn-wordbook-export" type="button">导出 PDF</button>
+          </div>
+        </div>
+      </div>
+      <div class="wordbook-toolbar" aria-label="单词排序">
+        <button class="wordbook-sort is-active" type="button" data-sort="time-desc">时间顺序</button>
+        <button class="wordbook-sort" type="button" data-sort="time-asc">时间逆序</button>
+        <button class="wordbook-sort" type="button" data-sort="alpha-asc">字母顺序</button>
+        <button class="wordbook-sort" type="button" data-sort="alpha-desc">字母逆序</button>
+      </div>
+      <div id="wordbook-list" class="wordbook-list"></div>
+      <section class="article-book" aria-label="知乎英语日报存档">
+        <div class="article-book-head"><div><p class="eyebrow">ZHIHU ENGLISH DAILY</p><h3>日报存档</h3><p>每次生成都会保存为一期日报，单篇可单独练习。</p></div><span id="article-count" class="count">0</span></div>
+        <div id="article-list" class="article-groups"></div>
+      </section>
+    </section>
+
+    <!-- 词汇池：主界面专注生成，单词本按需从悬浮选择器打开 -->
+    <section id="story-pool-view" class="view story-pool-view" hidden>
+      <button id="btn-open-word-picker" class="word-picker-fab" type="button" aria-controls="word-picker-backdrop" aria-expanded="false">
+        <span class="word-picker-fab-icon" aria-hidden="true"><img src="assets/ui/sidebar/speaking.png" alt=""></span>
+        <span><strong>选择生词</strong><small><b id="word-picker-fab-count">0</b> 个已在词汇池</small></span>
+      </button>
+
+      <div id="word-picker-backdrop" class="word-picker-backdrop" hidden>
+        <div class="word-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="word-picker-title">
+          <button id="btn-close-word-picker" class="word-picker-close" type="button" aria-label="关闭生词选择">×</button>
+        <aside class="pool-col pool-col-wordbook">
+          <div class="pool-col-head">
+            <h3 id="word-picker-title">选择生词</h3>
+            <span id="wb-word-count" class="count">0</span>
+          </div>
+          <div class="pool-toolbar">
+            <div class="search-wrap"><span class="search-icon" aria-hidden="true">⌕</span><input id="wb-word-search" class="search" type="search" placeholder="搜索单词或释义…" autocomplete="off"></div>
+            <select id="wb-pos-filter" class="cfg-select" aria-label="按词性筛选">
+              <option value="">全部词性</option>
+              <option value="n">名词</option>
+              <option value="v">动词</option>
+              <option value="adj">形容词</option>
+              <option value="adv">副词</option>
+            </select>
+          </div>
+          <div id="wb-word-list" class="import-word-list"></div>
+          <div class="pool-selection-bar">
+            <strong id="wb-selected-count">已选 0 / 30</strong>
+            <span class="pool-selection-actions">
+              <button id="btn-wb-select-all" class="btn-ghost" type="button">全选</button>
+              <button id="btn-wb-add-selected" class="btn-primary" type="button">加入池子 <span class="btn-arrow">→</span></button>
+            </span>
+          </div>
+        </aside>
+        </div>
+      </div>
+
+      <div class="pool-layout">
+        <!-- 今日词汇池 + 生成 -->
+        <aside class="pool-col pool-col-studio">
+          <div class="pool-col-head">
+            <h3>今日词汇池</h3>
+            <span class="pool-actions">
+              <span id="story-pool-count" class="count">0 / 30</span>
+              <button id="btn-clear-pool" class="btn-link" type="button">清空</button>
+            </span>
+          </div>
+          <div class="pool-search-wrap">
+            <form id="pool-search-form" class="pool-search-form">
+              <div class="search-wrap"><span class="search-icon" aria-hidden="true">⌕</span><input id="pool-search" class="search" type="search" placeholder="搜索全部单词，直接加入词汇池…" autocomplete="off"></div>
+              <button id="btn-pool-search" class="pool-search-button" type="submit"><span aria-hidden="true">⌕</span>搜索</button>
+            </form>
+            <div id="pool-search-results" class="pool-search-results" hidden></div>
+          </div>
+          <small id="story-pool-updated" class="pool-updated">尚未添加单词</small>
+          <div id="story-pool-list" class="story-pool-list" aria-live="polite"></div>
+
+          <button id="btn-generate" class="btn-primary" type="button"><span>生成知乎英语日报</span><span class="btn-arrow" aria-hidden="true">→</span></button>
+          <div id="generation-stage" class="generation-stage" hidden aria-live="polite">
+            <div class="generation-stage-book" aria-hidden="true"><span></span><span></span></div>
+            <div class="generation-stage-words" aria-hidden="true"></div>
+            <p class="generation-stage-label">正在把词汇编排成文章…</p>
+          </div>
+          <div class="generation-controls">
+            <div class="story-method"><span class="mode-name">知乎英语日报编辑台</span><small>日常科普 · 冷知识 · 轻娱乐观察 · 单篇最多 20 个目标词</small></div>
+            <div class="generation-pref-grid">
+              <fieldset class="generation-pref"><legend>记忆范围</legend><label><input type="radio" name="memory-scope" value="pool" checked><span>当前词汇池</span></label><label><input type="radio" name="memory-scope" value="recent_3d"><span>近 3 日连续记忆</span></label><small id="recent-memory-note">包含今天、昨天和前天收藏的单词</small></fieldset>
+              <fieldset class="generation-pref"><legend>文章呈现</legend><label><input type="radio" name="article-language" value="en" checked><span>英文</span></label><label><input type="radio" name="article-language" value="zh"><span>中文</span></label><small>两种内容都会保存，主视图按此选择呈现</small></fieldset>
+            </div>
+            <div class="source-block">
+              <div class="source-head"><span class="diff-label">选题来源</span><small class="source-hint">知乎回答 · 热榜 · 故事 · 知识</small></div>
+              <div class="source-tabs" role="tablist" aria-label="选题来源">
+                <button class="source-tab is-active" type="button" data-source="auto">搜索</button>
+                <button class="source-tab" type="button" data-source="hot">热榜</button>
+                <button class="source-tab" type="button" data-source="story">故事</button>
+                <button class="source-tab" type="button" data-source="knowledge">知识</button>
+                <button class="source-tab" type="button" data-source="original">原创</button>
+              </div>
+              <div id="source-picker" class="source-picker" hidden></div>
+            </div>
+            <div class="diff-block">
+              <div class="diff-head">
+                <span class="diff-label">阅读难度</span>
+                <span id="diff-val" class="diff-val">初中 · 简单</span>
+              </div>
+              <input id="diff-slider" class="diff-slider" type="range" min="1" max="10" value="3">
+              <div class="diff-range"><span>简单（初中）</span><span>难（四六级+）</span></div>
+            </div>
+            <div class="length-block">
+              <div class="diff-head"><span class="diff-label">文章长度</span><span id="length-val" class="diff-val">约 220 词</span></div>
+              <input id="length-slider" class="diff-slider" type="range" min="180" max="260" step="10" value="220">
+              <div class="diff-range"><span>短讯 · 140 词</span><span>长篇 · 650 词</span></div>
+            </div>
+            <div class="tune-note"><span>阅读偏好</span><small>调整本次日报的节奏</small></div>
+            <div class="tune-grid">
+            <label class="tune-field"><span>词汇密度</span><div class="tune-menu"><button class="tune-select tune-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="tune-value">中 · 平衡</span><span class="select-chevron" aria-hidden="true">⌄</span></button><div class="tune-options" role="listbox"><button class="tune-option" type="button" data-value="3" role="option">低 · 分散</button><button class="tune-option is-selected" type="button" data-value="5" role="option">中 · 平衡</button><button class="tune-option" type="button" data-value="8" role="option">高 · 集中</button></div></div><select id="param-density" class="tune-native" tabindex="-1" aria-hidden="true"><option value="3">低 · 分散</option><option value="5" selected>中 · 平衡</option><option value="8">高 · 集中</option></select></label>
+            <label class="tune-field"><span>故事丰富度</span><div class="tune-menu"><button class="tune-select tune-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="tune-value">中 · 标准</span><span class="select-chevron" aria-hidden="true">⌄</span></button><div class="tune-options" role="listbox"><button class="tune-option" type="button" data-value="3" role="option">低 · 简略</button><button class="tune-option is-selected" type="button" data-value="5" role="option">中 · 标准</button><button class="tune-option" type="button" data-value="8" role="option">高 · 丰富</button></div></div><select id="param-richness" class="tune-native" tabindex="-1" aria-hidden="true"><option value="3">低 · 简略</option><option value="5" selected>中 · 标准</option><option value="8">高 · 丰富</option></select></label>
+            <label class="tune-field"><span>推理强度</span><div class="tune-menu"><button class="tune-select tune-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="tune-value">中 · 平衡</span><span class="select-chevron" aria-hidden="true">⌄</span></button><div class="tune-options" role="listbox"><button class="tune-option" type="button" data-value="3" role="option">低 · 直观</button><button class="tune-option is-selected" type="button" data-value="5" role="option">中 · 平衡</button><button class="tune-option" type="button" data-value="8" role="option">高 · 推演</button></div></div><select id="param-reasoning" class="tune-native" tabindex="-1" aria-hidden="true"><option value="3">低 · 直观</option><option value="5" selected>中 · 平衡</option><option value="8">高 · 推演</option></select></label>
+            <label class="tune-field"><span>故事抽象度</span><div class="tune-menu"><button class="tune-select tune-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="tune-value">中 · 平衡</span><span class="select-chevron" aria-hidden="true">⌄</span></button><div class="tune-options" role="listbox"><button class="tune-option" type="button" data-value="3" role="option">低 · 具体</button><button class="tune-option is-selected" type="button" data-value="5" role="option">中 · 平衡</button><button class="tune-option" type="button" data-value="8" role="option">高 · 抽象</button></div></div><select id="param-abstraction" class="tune-native" tabindex="-1" aria-hidden="true"><option value="3">低 · 具体</option><option value="5" selected>中 · 平衡</option><option value="8">高 · 抽象</option></select></label>
+            </div>
+          </div>
+          <div id="result" class="result">
+            <div class="result-placeholder"><span class="result-orb" aria-hidden="true">✦</span><strong>你的知乎英语日报会在这里生成</strong><span>选择当前词汇池或近 3 日词汇，至少 3 个词开始生成</span></div>
+          </div>
+        </aside>
+      </div>
+      <section id="practice-workspace" class="pool-practice-workspace" aria-label="词汇池记忆练习">
+        <div class="pool-practice-head"><div><span>MEMORY PRACTICE</span><h3>词汇池练习</h3></div><small>生成文章后，直接在这里完成选词填空</small></div>
+        <div id="practice-empty" class="practice-empty">
+          <span class="result-orb" aria-hidden="true">◌</span><strong>还没有可练习的日报</strong><span>在上方词汇池生成文章后，练习会直接出现在这里。</span>
+        </div>
+        <div id="practice-card" class="practice-card" hidden>
+          <div class="practice-meta"><span>知乎英语日报 · 选词填空</span><span id="practice-score">准备好了吗？</span></div>
+          <div class="practice-progress-row"><span>完成进度</span><span id="practice-progress-label">0 / 0</span></div>
+          <div class="practice-progress" aria-label="填空完成进度"><span id="practice-progress-fill"></span></div>
+          <div id="practice-story" class="practice-story"></div>
+          <div class="practice-actions"><button id="btn-check-practice" class="btn-primary" type="button">提交并检查 <span class="btn-arrow">→</span></button><button id="btn-reset-practice" class="btn-ghost" type="button">重新练习</button></div>
+          <div id="practice-feedback" class="practice-feedback" role="status" aria-live="polite" hidden></div>
+          <div id="practice-source" class="practice-source" hidden>
+            <div class="practice-source-label"><span>英文原文 · 中文翻译</span><span id="practice-completed-at" class="practice-completed-at"></span></div>
+            <p id="practice-source-en"></p>
+            <p id="practice-source-cn"></p>
+          </div>
+        </div>
+      </section>
+    </section>
+
+      <div id="generation-overlay" class="generation-overlay" hidden aria-live="polite" aria-busy="true">
+        <div class="generation-orbit" aria-hidden="true"></div>
+      <div class="generation-status"><span class="generation-status-dot"></span><span id="generation-status-text">等待识别</span><span class="generation-progress"><i></i></span></div>
+      <div class="generation-choice" hidden>
+        <button class="generation-choice-card" type="button" data-generation-choice="recommended"><strong>建议文章</strong><small>基于词汇与知乎题材</small></button>
+        <button class="generation-choice-card" type="button" data-generation-choice="original"><strong>原创</strong><small>自由组织全新故事</small></button>
+      </div>
+    </div>
+
+    <!-- 知乎英语日报 -->
+    <section id="story-book-view" class="view collection-view" hidden>
+      <div class="view-head">
+        <div class="view-head-actions"><button id="btn-weekly-export-pdf" class="btn-ghost" type="button">导出 PDF</button><button id="btn-weekly-export-word" class="btn-ghost" type="button">导出 Word</button><button class="btn-ghost view-link" type="button" data-view="story-pool-view">继续生成</button></div>
+      </div>
+      <div class="collection-hero compact-hero weekly-hero"><div><span class="collection-kicker">ZHIHU ENGLISH DAILY</span><h3>日报存档</h3><p>把知乎的知识问题改写成一篇适合今天阅读的英文短文。</p><small id="weekly-issue-note" class="weekly-issue-note">今天尚未生成</small></div><div class="collection-stat"><strong id="weekly-word-count">0</strong><small>今日记忆词</small></div></div>
+      <div class="weekly-archive-head"><div class="periodical-tabs" role="tablist" aria-label="刊物周期"><button class="periodical-tab is-active" type="button" data-period="daily">日报</button><button class="periodical-tab" type="button" data-period="week">周刊</button><button class="periodical-tab" type="button" data-period="month">月刊</button></div><span id="story-book-count" class="count">0</span></div>
+      <div id="story-book-list" class="article-list story-book-list"></div>
+    </section>
+
+    <!-- 每日打卡 -->
+    <section id="daily-view" class="view collection-view" hidden>
+      <div class="view-head">
+        <button id="btn-daily-checkin" class="btn-primary view-head-action" type="button">今日打卡 <span class="btn-arrow">→</span></button>
+      </div>
+      <div class="daily-summary">
+        <div class="daily-streak"><span>连续学习</span><strong id="daily-streak-count">0</strong><small>天</small></div>
+        <div><span class="collection-kicker">YOUR RHYTHM</span><h3 id="daily-status-title">今天还没有打卡</h3><p id="daily-status-copy">完成一次打卡，记录你的学习节奏。</p></div>
+      </div>
+      <div class="daily-week" id="daily-week" aria-label="最近七天打卡记录"></div>
+      <div class="timestamp-note" id="daily-last-time">最近打卡：—</div>
+    </section>
+
+    <!-- 个人信息 -->
+    <section id="profile-view" class="view collection-view" hidden>
+      <div class="profile-card">
+        <div class="profile-card-head"><button id="profile-avatar-button" class="profile-avatar-large" type="button" aria-label="选择头像">学</button><div><span class="collection-kicker">MY SPACE</span><h3>我的学习空间</h3><p id="profile-account-status">未登录 · 登录后同步加密数据</p><p id="profile-updated">信息尚未更新</p></div></div>
+        <div id="profile-avatar-options" class="avatar-options" aria-label="选择头像">
+          <button type="button" class="avatar-option is-selected" data-avatar="学">学</button><button type="button" class="avatar-option" data-avatar="M">M</button><button type="button" class="avatar-option" data-avatar="✦">✦</button><button type="button" class="avatar-option" data-avatar="B">B</button><button type="button" class="avatar-option" data-avatar="W">W</button><button id="btn-avatar-upload" type="button" class="avatar-option avatar-upload" title="上传自定义头像" aria-label="上传头像">＋</button>
+        </div>
+        <input id="avatar-file" type="file" accept="image/*" hidden>
+        <div class="profile-form"><label>显示名称<input id="profile-name" type="text" maxlength="24" placeholder="例如：小遇"></label><label>每日目标<input id="profile-goal" type="text" maxlength="32" placeholder="例如：每天记住 10 个词"></label><label class="profile-wide">个性签名<textarea id="profile-signature" maxlength="80" rows="3" placeholder="写一句属于你的 知乎英语日报编辑台签名"></textarea></label></div>
+        <div class="profile-stats" aria-label="学习统计"><div><strong id="profile-stat-words">0</strong><span>词汇储备</span></div><div><strong id="profile-stat-issues">0</strong><span>累计写文</span></div><div><strong id="profile-stat-completed">0</strong><span>完成练习</span></div><div><strong id="profile-stat-checkins">0</strong><span>累计打卡</span></div></div>
+        <button id="btn-save-profile" class="btn-primary" type="button">保存个人信息 <span class="btn-arrow">→</span></button>
+        <button id="btn-auth-profile" class="btn-ghost profile-logout" type="button">登录 / 创建本地账户</button>
+        <button id="btn-logout-profile" class="btn-ghost profile-logout" type="button" hidden>退出当前账户</button>
+      </div>
+    </section>
+
+    <!-- 搜索词库（单独界面）：卡牌浏览与收藏 -->
+    <section id="search-view" class="view search-view" hidden>
+      <div class="wordbook-summary">
+        <div class="wordbook-cover" aria-hidden="true"><span>WORD</span><b>HUNT</b><i></i></div>
+        <div class="wordbook-summary-main">
+          <p class="wordbook-summary-kicker">LIBRARY · 全词库检索</p>
+          <div class="wordbook-summary-title">找到想收藏的词</div>
+          <div class="wordbook-total">收录单词：<strong id="card-count">0</strong></div>
+          <div class="wordbook-summary-actions">
+            <button id="btn-random" class="btn-wordbook-export" type="button">随机一词</button>
+            <button id="btn-daily" class="btn-wordbook-export" type="button">今日单词</button>
+            <button id="btn-custom-word" class="btn-wordbook-study custom-word-trigger" type="button">＋自设单词</button>
+          </div>
+        </div>
+      </div>
+      <div class="wordbook-toolbar lib-toolbar">
+        <div class="search-wrap lib-search"><span class="search-icon" aria-hidden="true">⌕</span><input id="search" class="search" type="search" placeholder="搜索全部单词、释义或词性…" autocomplete="off"></div>
+        <label class="filter-field">
+          <span>学习阶段</span>
+          <select id="word-level" class="cfg-select">
+            <option value="all">全部词库</option>
+          </select>
+        </label>
+        <label class="filter-field">
+          <span>词性</span>
+          <select id="pos-filter" class="cfg-select">
+            <option value="">全部</option>
+            <option value="n">名词</option>
+            <option value="v">动词</option>
+            <option value="adj">形容词</option>
+            <option value="adv">副词</option>
+          </select>
+        </label>
+        <button id="btn-reset-filter" class="btn-link" type="button">重置</button>
+      </div>
+      <div id="lib-list" class="lib-list"></div>
+      <div id="lib-empty" class="empty-hint"><span class="empty-icon" aria-hidden="true">✦</span><span>没有找到匹配的词语</span><small>试试调整搜索关键词或筛选条件</small></div>
+    </section>
+
+    <!-- 关于 / 项目介绍 -->
+    <section id="about-view" class="view about-view" hidden>
+      <div class="about-hero">
+        <p class="eyebrow">ABOUT THIS PROJECT · 关于本项目</p>
+        <h2>刊见单词 <span class="about-hero-en">Bookwords</span></h2>
+        <p class="about-tagline">把生词放进知乎知识的日常问题——生成一篇双语英语日报，再用练习把它们留在脑海里。</p>
+        <div class="about-badges">
+          <span class="about-badge">AI 生成双语日报</span>
+          <span class="about-badge">知乎开放平台 · 黑客松</span>
+          <span class="about-badge">本地优先 · 数据不离开设备</span>
+        </div>
+      </div>
+
+      <section class="about-section">
+        <div class="about-section-head"><h3>它如何工作</h3><p>一条从「生词」到「记住」的完整流水线</p></div>
+        <ol class="about-steps">
+          <li><span class="about-step-no" aria-hidden="true">1</span><div class="about-step-body"><strong>收集</strong><small>在搜索词库找到要记的词，收藏进单词本</small></div></li>
+          <li><span class="about-step-no" aria-hidden="true">2</span><div class="about-step-body"><strong>选题</strong><small>选择原创灵感，或从知乎热榜、故事、知识与回答中挑选素材</small></div></li>
+          <li><span class="about-step-no" aria-hidden="true">3</span><div class="about-step-body"><strong>出版</strong><small>AI 把目标词写进一篇 Zhihu 双语日报（英文正文 + 中文对照 + 记忆口诀）</small></div></li>
+          <li><span class="about-step-no" aria-hidden="true">4</span><div class="about-step-body"><strong>阅读与练习</strong><small>翻书阅读日报，用填空练习把目标词填回故事</small></div></li>
+        </ol>
+      </section>
+
+      <section class="about-section">
+        <div class="about-section-head"><h3>核心功能</h3><p>六大能力，构成完整的记忆闭环</p></div>
+        <div class="about-features">
+          <div class="about-feature"><span class="about-feature-icon" aria-hidden="true">⌕</span><h4>搜索词库</h4><p>搜索、筛选并收藏要记的词</p></div>
+          <div class="about-feature"><span class="about-feature-icon" aria-hidden="true">▤</span><h4>单词本</h4><p>集中管理收藏的单词与日报存档</p></div>
+          <div class="about-feature"><span class="about-feature-icon" aria-hidden="true">▦</span><h4>词汇池</h4><p>选好目标词，选择选题来源，生成知乎英语日报</p></div>
+          <div class="about-feature"><span class="about-feature-icon" aria-hidden="true">▧</span><h4>知乎英语日报</h4><p>报纸版式阅读，支持 PDF / Word 导出</p></div>
+          <div class="about-feature"><span class="about-feature-icon" aria-hidden="true">✓</span><h4>记忆练习</h4><p>把目标词填回故事空缺，检验记忆</p></div>
+          <div class="about-feature"><span class="about-feature-icon" aria-hidden="true">✦</span><h4>每日打卡</h4><p>用打卡节奏沉淀每日学习</p></div>
+        </div>
+      </section>
+
+      <section class="about-section about-zhihu">
+        <div class="about-section-head"><h3>知乎开放平台 · 黑客松能力</h3><p>把知乎内容，变成你的英文日报选题</p></div>
+        <div class="about-zhihu-grid">
+          <div class="about-zhihu-card">
+            <span class="about-zhihu-tag">ZHIHU SEARCH</span>
+            <h4>高赞内容 → 日报选题</h4>
+            <p>仅选择赞同数达到 5000 的知乎回答或文章，只提取主体节选作为论点骨架。</p>
+          </div>
+          <div class="about-zhihu-card">
+            <span class="about-zhihu-tag">AI WRITING</span>
+            <h4>外部 AI → 双语日报</h4>
+            <p>使用设置页配置的 OpenAI 兼容接口生成双语学习文章；输出异常时自动校验纠正，不生成占位内容。</p>
+          </div>
+          <div class="about-zhihu-card">
+            <span class="about-zhihu-tag">CREDIT</span>
+            <h4>版权署名</h4>
+            <p>每篇内容都以中文小字标注来源；使用知乎素材时同时保留标题、作者与赞同数。</p>
+          </div>
+          <div class="about-zhihu-card">
+            <span class="about-zhihu-tag">QUOTA GUARD</span>
+            <h4>额度保护</h4>
+            <p>搜索与热榜使用持久缓存；合格的生成文章短时缓存，减少外部 API 的重复调用与成本。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="about-section">
+        <div class="about-section-head"><h3>技术栈</h3></div>
+        <div class="about-tech">
+          <span>Flask · Python</span>
+          <span>原生 HTML / CSS / JS</span>
+          <span>OpenAI 兼容生成 API</span>
+          <span>知乎开放平台 API</span>
+          <span>本地加密账户</span>
+        </div>
+      </section>
+
+      <section class="about-section about-note">
+        <div class="about-section-head"><h3>说明与免责声明</h3></div>
+        <p class="about-disclaimer">所有日报均为 AI 生成的英语学习材料，并非真实新闻；改编自知乎的内容均已署名原作者，仅用于学习练习。</p>
+      </section>
+    </section>
+  </main>
+
+  <footer class="app-footnote">刊见单词 · 记忆学习工具；本期 知乎英语日报为模仿真实报刊排版的学习练习素材，不构成真实新闻或建议。</footer>
+
+  <nav class="mobile-tabbar" aria-label="移动端主导航">
+    <button type="button" data-view="home-view" aria-label="主页"><span class="mobile-tab-icon mobile-tab-icon-image" aria-hidden="true"><img src="assets/ui/sidebar/home.png" alt=""></span><small>主页</small></button>
+    <button type="button" data-view="search-view" aria-label="搜索"><span class="mobile-tab-icon mobile-tab-icon-image" aria-hidden="true"><img src="assets/ui/sidebar/word.png" alt=""></span><small>搜索</small></button>
+    <button class="mobile-tab-create" type="button" data-view="story-pool-view" aria-label="用词汇生成文章"><span>+</span><small>生成</small></button>
+    <button type="button" data-view="wordbook-view" aria-label="单词本"><span class="mobile-tab-icon mobile-tab-icon-image" aria-hidden="true"><img src="assets/ui/sidebar/course.png" alt=""></span><small>单词本</small></button>
+    <button type="button" data-view="profile-view" aria-label="我的"><span id="mobile-profile-avatar" class="mobile-tab-icon mobile-tab-avatar" aria-hidden="true">学</span><small>我的</small></button>
+  </nav>
+
+
+  <!-- 系统设置弹窗 -->
+  <div id="settings-modal" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <div><h2>系统设置</h2><p id="settings-updated-at" class="settings-updated-at">尚未保存过设置</p></div>
+        <button id="btn-close-settings" class="modal-close" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <section class="setting-group">
+          <h3>文章生成 API</h3>
+          <p class="setting-note">支持 DeepSeek、OpenAI 与其他 OpenAI 兼容接口。API Key 仅保存在本机后端，不会写入网页或日志。</p>
+          <label>AI 供应商（选择后自动填充）
+            <select id="cfg-provider" class="cfg-select">
+              <option value="">—— 选择 / 识别供应商 ——</option>
+            </select>
+          </label>
+          <label>Base URL
+            <input id="cfg-base-url" type="text" placeholder="https://api.deepseek.com" spellcheck="false">
+          </label>
+          <label>API Key
+            <input id="cfg-api-key" type="password" placeholder="未配置 API Key（可选）" spellcheck="false" autocomplete="new-password">
+          </label>
+          <div class="cfg-key-row">
+            <span id="cfg-key-note" class="cfg-key-note"></span>
+            <button id="btn-clear-key" class="btn-link" type="button" hidden>清除 Key</button>
+          </div>
+          <label>模型（点击下方获取 Key 可用的真实模型）
+            <select id="cfg-model" class="cfg-select"></select>
+          </label>
+          <div class="cfg-model-row">
+            <button id="btn-fetch-models" class="btn-ghost" type="button">获取可用模型</button>
+            <span id="cfg-model-status" class="cfg-detect"></span>
+          </div>
+          <label id="cfg-model-custom-wrap" class="cfg-custom" hidden>
+            <span class="cfg-custom-label">自定义模型</span>
+            <input id="cfg-model-custom" type="text" placeholder="输入模型名，如 llama3" spellcheck="false">
+          </label>
+          <div id="cfg-detect" class="cfg-detect"></div>
+          <div class="cfg-test-row">
+            <button id="btn-test-ai" class="btn-ghost" type="button">测试连接</button>
+            <span id="cfg-test-result" class="cfg-test-result"></span>
+          </div>
+        </section>
+        <section class="setting-group">
+          <h3>知乎开放平台</h3>
+          <p class="setting-note">仅用于知乎搜索、热榜等文章选材；知乎直答生成暂未启用。Secret 只保存在本机 <code>backend/settings.json</code>。</p>
+          <label>Access Secret
+            <input id="cfg-zhihu-secret" type="password" placeholder="未配置 Access Secret（可选）" spellcheck="false" autocomplete="new-password">
+          </label>
+          <div class="cfg-key-row">
+            <span id="cfg-zhihu-note" class="cfg-key-note"></span>
+            <button id="btn-clear-zhihu" class="btn-link" type="button" hidden>清除 Secret</button>
+          </div>
+          <a id="cfg-zhihu-link" class="cfg-zhihu-link" href="https://developer.zhihu.com/profile" target="_blank" rel="noopener">去知乎开放平台获取 Access Secret →</a>
+        </section>
+        <section class="setting-group">
+          <h3>视觉风格</h3>
+          <div class="theme-options">
+            <button class="theme-btn active" type="button" data-theme="paper">纸白</button>
+            <button class="theme-btn" type="button" data-theme="ink">墨黑</button>
+          </div>
+        </section>
+        <section class="setting-group">
+          <div class="setting-toggle-row">
+            <span><strong>移动端布局预览</strong><small>测试阶段使用，在桌面浏览器中强制显示移动端下栏</small></span>
+            <label class="switch-control"><input id="cfg-mobile-layout" type="checkbox"><span aria-hidden="true"></span></label>
+          </div>
+        </section>
+        <section class="setting-group setting-danger">
+          <h3>数据与缓存</h3>
+          <p class="setting-note">
+            AI 配置（含 API Key）只保存在本机 <code>backend/settings.json</code>；账户数据保存在加密的
+            <code>backend/data/users.json</code>，已列入
+            <code>.gitignore</code>，不会随 GitHub 上传。若仍不放心，可一键清除。
+          </p>
+          <button id="btn-clear-data" class="btn-danger" type="button">清除已保存数据（含 API Key）</button>
+        </section>
+      </div>
+      <div class="modal-foot">
+        <button id="btn-cancel-config" class="btn-ghost" type="button">取消</button>
+        <button id="btn-save-config" class="btn-primary" type="button">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 本地账户弹窗：账户数据只通过后端加密 JSON 保存 -->
+  <div id="auth-modal" class="modal" hidden>
+    <div class="modal-card auth-card">
+      <div class="modal-head"><div><p class="eyebrow">LOCAL ACCOUNT</p><h2 id="auth-title">登录刊见单词</h2></div><button id="btn-close-auth" class="modal-close" type="button">×</button></div>
+      <div class="modal-body">
+        <p id="auth-intro" class="auth-intro">登录后，个人资料、词汇池、日报与练习记录会保存到本机加密 JSON 文件中。</p>
+        <label>账户名<input id="auth-username" type="text" maxlength="32" placeholder="例如：Zhihu_writer" autocomplete="username" spellcheck="false"></label>
+        <label>密码<input id="auth-password" type="password" minlength="8" placeholder="至少 8 位" autocomplete="current-password"></label>
+        <label id="auth-confirm-wrap" hidden>确认密码<input id="auth-confirm" type="password" minlength="8" placeholder="再次输入密码" autocomplete="new-password"></label>
+        <span id="auth-status" class="cfg-detect" role="status" aria-live="polite"></span>
+      </div>
+      <div class="modal-foot"><button id="btn-auth-switch" class="btn-ghost" type="button">创建本地账户</button><button id="btn-auth-submit" class="btn-primary" type="button">登录</button></div>
+    </div>
+  </div>
+
+  <!-- 自设单词弹窗 -->
+  <div id="custom-modal" class="modal" hidden>
+    <div class="modal-card custom-card">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">YOUR WORD</p>
+          <h2>自设单词</h2>
+        </div>
+        <button id="btn-close-custom" class="modal-close" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="custom-intro">把正在学习的词加入词库，保存后会参与全词库搜索与故事生成。</p>
+        <label>英文单词
+          <input id="custom-word" type="text" placeholder="例如：serendipity" autocomplete="off" spellcheck="false">
+        </label>
+        <label>词性
+          <select id="custom-pos" class="cfg-select">
+            <option value="">未标注</option>
+            <option value="n.">n. 名词</option>
+            <option value="v.">v. 动词</option>
+            <option value="adj.">adj. 形容词</option>
+            <option value="adv.">adv. 副词</option>
+          </select>
+        </label>
+        <label>中文释义
+          <input id="custom-meaning" type="text" placeholder="最多填写三条，用分号分隔" autocomplete="off">
+        </label>
+        <span id="custom-status" class="cfg-detect"></span>
+      </div>
+      <div class="modal-foot">
+        <button id="btn-cancel-custom" class="btn-ghost" type="button">取消</button>
+        <button id="btn-save-custom" class="btn-primary" type="button">保存并加入词库</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 刊物阅读器：分版面翻页阅读 -->
+  <div id="newspaper-modal" class="modal" hidden>
+    <div class="modal-card newspaper-modal-card">
+      <div class="modal-head newspaper-modal-head">
+        <div><p class="eyebrow">ZHIHU ENGLISH DAILY</p><h2>The Daily Reader</h2></div>
+        <button id="btn-close-newspaper" class="modal-close" type="button">×</button>
+      </div>
+      <div class="paper-reader">
+        <button id="paper-prev" class="paper-nav paper-nav-prev" type="button" aria-label="Previous page">‹</button>
+        <div class="book-wrap"><div id="newspaper-body" class="book"></div></div>
+        <button id="paper-next" class="paper-nav paper-nav-next" type="button" aria-label="Next page">›</button>
+      </div>
+      <div class="modal-foot newspaper-modal-tools">
+        <span id="paper-page-indicator" class="paper-page-indicator">COVER</span>
+        <span class="paper-tools-spacer"></span>
+        <button id="btn-gloss-words" class="btn-ghost paper-toggle" type="button" data-gloss="words">Key Words</button>
+        <button id="btn-newspaper-pdf" class="btn-ghost" type="button">Export PDF</button>
+        <button id="btn-newspaper-word" class="btn-primary" type="button">Export Word</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 轻提示 -->
+  <div id="toast" class="toast" hidden></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
+

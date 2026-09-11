@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 本地敏感数据（密钥与账户，不入库）
+backend/settings.json
+backend/settings.json.tmp
+backend/data/users.json
+backend/data/users.json.tmp
+backend/custom_words.json
+
+# 工具缓存
+.ruff_cache/
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.log
+backend/runtime/*.jsonl
+!backend/runtime/.gitkeep
+backend/runtime/zhihu_api_state.json
+backend/runtime/zhihu_api_state.json.tmp
+
+# 本地完整词库（体积较大或可能受分发许可限制，不上传仓库）
+wordlist/json/*.json
+!wordlist/json/.gitkeep

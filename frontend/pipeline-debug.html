@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f3f6fa">
+  <title>API 链路观察台 · 临时窗口</title>
+  <link rel="stylesheet" href="css/pipeline-debug.css">
+</head>
+<body>
+  <header class="debug-header">
+    <div>
+      <p class="eyebrow">TEMPORARY PIPELINE OBSERVER</p>
+      <h1>API 链路观察台</h1>
+      <p>单词导入、语义排序、生文、双语呈现与刊物聚合的独立调试窗口</p>
+    </div>
+    <div class="header-actions">
+      <span id="model-status" class="status-pill">检查模型中</span>
+      <a class="quiet-link" href="/">返回主应用</a>
+    </div>
+  </header>
+
+  <main class="debug-shell">
+    <aside class="control-panel" aria-label="链路输入">
+      <div class="panel-heading">
+        <div><span>RUN CONFIGURATION</span><h2>输入与约束</h2></div>
+        <span class="temporary-mark">临时</span>
+      </div>
+
+      <label class="field">
+        <span>导入来源</span>
+        <select id="import-source">
+          <option value="local_wordbook">主应用单词本</option>
+          <option value="api_import">外部 API</option>
+          <option value="manual">手动输入</option>
+        </select>
+      </label>
+      <div class="inline-actions">
+        <button id="load-wordbook" class="secondary-button" type="button">载入单词本</button>
+        <button id="load-sample" class="secondary-button" type="button">使用示例</button>
+      </div>
+      <label class="field field-grow">
+        <span>词条 JSON 或每行一个单词</span>
+        <textarea id="word-input" spellcheck="false" placeholder='[{"word":"context","pos":"n.","meaning_cn":"语境"}]'></textarea>
+      </label>
+
+      <fieldset class="segmented-field">
+        <legend>语言呈现</legend>
+        <div class="segmented" id="language-choice">
+          <label><input type="radio" name="language" value="en" checked><span>英文</span></label>
+          <label><input type="radio" name="language" value="zh"><span>中文</span></label>
+        </div>
+      </fieldset>
+
+      <label class="field">
+        <span>题材约束</span>
+        <input id="topic-constraint" type="text" autocomplete="off" placeholder="例如：科技如何改变日常学习">
+      </label>
+
+      <label class="field">
+        <span>题材来源</span>
+        <select id="content-source">
+          <option value="original">原创题材</option>
+          <option value="zhihu_search">知乎精选（仅 5000+ 赞）</option>
+        </select>
+      </label>
+      <div id="zhihu-fields" class="source-fields" hidden>
+        <button id="load-zhihu" class="secondary-button" type="button">搜索一条 5000+ 赞素材</button>
+        <label class="field"><span>素材 ID</span><input id="source-id" type="text" autocomplete="off"></label>
+        <label class="field"><span>问题 / 标题</span><input id="source-title" type="text" autocomplete="off"></label>
+        <label class="field"><span>摘要 / 论点骨架</span><textarea id="source-summary"></textarea></label>
+        <label class="field"><span>话题标签（逗号分隔）</span><input id="source-tags" type="text" autocomplete="off"></label>
+      </div>
+
+      <button id="run-pipeline" class="primary-button" type="button"><span>运行完整链路</span><span aria-hidden="true">→</span></button>
+      <p id="run-message" class="run-message" role="status" aria-live="polite"></p>
+    </aside>
+
+    <section class="observer" aria-label="链路输出">
+      <nav class="pipeline-track" aria-label="处理阶段">
+        <span data-step="import"><i>1</i>导入</span>
+        <span data-step="sort"><i>2</i>排序 Skill</span>
+        <span data-step="story"><i>3</i>生文 Skill</span>
+        <span data-step="language"><i>4</i>语言呈现</span>
+        <span data-step="daily"><i>5</i>每日文章</span>
+        <span data-step="digest"><i>6</i>周刊 / 月刊</span>
+      </nav>
+
+      <div id="observer-empty" class="empty-state">
+        <span>API</span>
+        <h2>等待运行链路</h2>
+        <p>运行后，这里会按阶段展开真实输入、结构化输出、fallback 状态与 LLM 指标。</p>
+      </div>
+
+      <div id="observer-results" hidden>
+        <section class="result-section overview-section">
+          <div class="section-heading"><div><span>RUN OVERVIEW</span><h2>本次运行</h2></div><code id="run-id"></code></div>
+          <div id="run-stats" class="stat-grid"></div>
+        </section>
+
+        <section class="result-section">
+          <div class="section-heading"><div><span>01 · IMPORT</span><h2>单词本导入结果</h2></div><span id="import-badge" class="result-badge"></span></div>
+          <div id="import-summary" class="summary-line"></div>
+          <div id="import-words" class="word-strip"></div>
+          <details id="import-anomalies"><summary>异常项</summary><div class="table-wrap"><table><thead><tr><th>序号</th><th>原始值</th><th>原因</th></tr></thead><tbody></tbody></table></div></details>
+        </section>
+
+        <section class="result-section">
+          <div class="section-heading"><div><span>02 · SORT SKILL</span><h2>排序结果</h2></div><span id="sort-state" class="result-badge"></span></div>
+          <div class="sort-layout">
+            <div><h3>语义聚类</h3><div id="semantic-clusters" class="cluster-list"></div></div>
+            <div><h3>难度分层</h3><div id="difficulty-layers" class="difficulty-grid"></div></div>
+          </div>
+          <div class="sort-layout lower-sort">
+            <div><h3>共现关系</h3><div id="cooccurrence" class="relation-list"></div></div>
+            <div><h3>最优分组</h3><div id="optimal-groups" class="group-list"></div></div>
+          </div>
+        </section>
+
+        <section class="result-section">
+          <div class="section-heading"><div><span>03–04 · STORY & LANGUAGE</span><h2>生文与语言呈现</h2></div><span id="story-state" class="result-badge"></span></div>
+          <div id="story-meta" class="summary-line"></div>
+          <article class="story-output"><h3 id="story-title"></h3><div id="story-content"></div></article>
+        </section>
+
+        <section class="publication-grid">
+          <article class="result-section">
+            <div class="section-heading"><div><span>05 · DAILY</span><h2>每日文章</h2></div><span id="daily-status" class="result-badge"></span></div>
+            <div id="daily-output"></div>
+          </article>
+          <article class="result-section">
+            <div class="section-heading"><div><span>06 · PERIODICAL</span><h2>周刊 / 月刊</h2></div><span id="digest-state" class="result-badge"></span></div>
+            <div id="digest-output"></div>
+          </article>
+        </section>
+      </div>
+
+      <section class="result-section calls-section">
+        <div class="section-heading">
+          <div><span>LLM OBSERVABILITY</span><h2>调用记录</h2></div>
+          <div class="inline-actions"><button id="refresh-calls" class="secondary-button" type="button">刷新</button><button id="clear-calls" class="secondary-button" type="button">清空</button></div>
+        </div>
+        <div class="table-wrap"><table class="calls-table"><thead><tr><th>Skill</th><th>Prompt</th><th>模型</th><th>Token</th><th>耗时</th><th>状态</th><th>开始时间</th></tr></thead><tbody id="calls-body"><tr><td colspan="7">暂无记录</td></tr></tbody></table></div>
+      </section>
+    </section>
+  </main>
+
+  <script type="module" src="js/pipeline-debug.js"></script>
+</body>
+</html>
