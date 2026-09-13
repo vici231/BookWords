@@ -33,8 +33,27 @@ function textLines(value) {
   return markdown(value).replace(/\r?\n/g, "<br>");
 }
 
+/* 本机凭证：与主应用共用 localStorage 键 wj-credentials，
+   随请求头发给后端（后端只在本次请求内使用，不落盘）。 */
+function credentialHeaders() {
+  try {
+    const cred = JSON.parse(localStorage.getItem("wj-credentials") || "null") || {};
+    const headers = {};
+    if (cred.api_key) headers["X-AI-Key"] = cred.api_key;
+    if (cred.base_url) headers["X-AI-Base-URL"] = cred.base_url;
+    if (cred.model) headers["X-AI-Model"] = cred.model;
+    if (cred.access_secret) headers["X-Zhihu-Secret"] = cred.access_secret;
+    return headers;
+  } catch (error) {
+    return {};
+  }
+}
+
 async function request(url, options = {}) {
-  const response = await fetch(url, options);
+  const response = await fetch(url, {
+    ...options,
+    headers: { ...credentialHeaders(), ...(options.headers || {}) },
+  });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) {
     const error = new Error(data.error || `请求失败（${response.status}）`);
@@ -129,7 +148,7 @@ async function loadZhihu() {
     const tags = item.labels || item.tags || [];
     $("#source-tags").value = Array.isArray(tags) ? tags.join(", ") : "";
     if (!$("#topic-constraint").value.trim()) $("#topic-constraint").value = title;
-    setMessage(`已载入一条 ${item.vote_up_count || 5000}+ 赞知乎素材。`);
+    setMessage(`已载入一条知乎素材（${item.vote_up_count || 0} 赞）。`);
   } catch (error) {
     setMessage(error.message, true);
   } finally {
@@ -292,7 +311,7 @@ async function runPipeline() {
     source_payload: sourcePayload(),
   };
   if (source !== "original" && !payload.source_payload.content_id) {
-    setMessage("请先搜索并载入一条 5000+ 赞的知乎素材。", true);
+    setMessage("请先搜索并载入一条知乎素材。", true);
     return;
   }
   const button = $("#run-pipeline");

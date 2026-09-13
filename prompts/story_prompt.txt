@@ -1,35 +1,21 @@
 [Task]
-生成一篇“知乎英语日报”短文：面向希望每天读一点英文、顺便记单词的普通学习者。文章类型只能是：daily-science（生活科普）、daily-curiosity（冷知识）、light-entertainment（轻娱乐观察）。优先选择一个清晰问题，用 3—6 个短段回答它；开头给出具体生活场景，中间解释原因或机制，结尾给一个可记忆的 takeaway。整体像知乎日报中的高质量回答改写，不像虚构小镇杂志、娱乐八卦或硬新闻。
+Write one English learning article plus its complete Chinese rendering. The target length in English words comes from options.length: land within about ±15% of it and state nothing about length in the article; if options.length is missing, write 180-260 words. When source is given, first summarize its theme and core information internally, then retell the SAME material in your own English — theme, key facts and conclusion must stay faithful — and weave the target words naturally into it; never copy sentences and never invent facts. Without a source, build the article around topic. Follow options for genre, tone, structure and difficulty too.
 
-当 sourcePayload 含有知乎内容时，先提炼 1 个核心问题和 2—3 个可核验要点，再用自己的英文重写；不得逐句翻译、复制超过连续 8 个英文单词，也不得虚构作者观点、实验数据或引语。文章末段用一句自然英文总结，不要出现“知乎用户说”之类元话语。
+[Composition]
+Before writing, plan internally in English: 1) restate the source's theme and core information in one sentence (or state your own claim when no source is given); 2) outline an opening scene, a core tension, an explanation or evidence beat, a turn, and a close; 3) assign each core_word a sentence where it appears naturally and pick fitting collocations for supporting_words; 4) cut any sentence that does not serve the logic. The body must show clear cause and effect, contrast or progression; never string the target words into a list.
+Core words may come from brands, places, people, disciplines or proper nouns such as American or iPhone; use them strictly with the meaning and part of speech given on the input cards, never reinterpret them. supporting_words must also all come from the input cards.
 
-当 sourcePayload 含有 angle、reason 或 source 字段时，视为用户确认过的智能选题。必须围绕 angle 提出的具体问题组织文章，并让目标词自然服务于该问题；reason 只用于理解词汇与题材的匹配关系，不要在文章中提及“推荐”“匹配”或任何内部流程。
-
-[Target words]
-每个目标词必须以 **word** 的完整形式出现至少一次，词性和释义必须正确。优先把 2 个相关词放进同一段，但绝不为了塞词破坏语法。文章正文之外不要罗列单词。
-目标词已由排序 skill 按“能否共同成文”筛选。必须让它们共享同一人物、场景、问题、机制或因果链；禁止把无关句子拼接成词汇清单式文章。语境连贯和自然可读优先于增加目标词出现次数。
-
-[Headline]
-标题是简洁的英文编辑标题，不是对核心问题的机械复述。标题 4—9 个自然英文词，必须包含一个具体意象、动作、结果或反差，让读者一眼看出文章独特角度。
-禁止以 Why、What、How、Can、Could、Do、Does、Did、Is、Are、Should 开头；禁止使用 “Why X…?”、“How X…?”、“A [形容词] X at/in Y” 等批量模板；除非来源本身必须保留疑问，标题不要使用问号。
-根据文章内容选择一种最合适的结构：具体场景、机制揭示、反差并置、结论式陈述或轻微悬念。不要为了吸睛夸张，不要把目标词生硬排列在标题里，也不要复用来源标题的句法。
-
-[Style]
-英文清晰、具体、适合日常阅读；根据 level 控制词汇难度。英文正文必须为 180—260 词，目标约 220 词。避免夸张表达、伪引语和无法验证的精确数字。
+[Words]
+Every w in words must keep its original form in both the English and the Chinese text, and its first appearance is written as **w**; check them one by one, never drop any. m is the meaning. All words serve one coherent context. When the source cannot carry part of the words naturally, keep the source's theme and core information intact first, and internally mark the words that cannot be used naturally; never twist the material or force words in.
+context.core_words are the directional keywords of this article and must be used naturally first; context.supporting_words complete the context. Both are standalone single words from the input cards, not fixed phrases for you to coin.
 
 [Output]
-只输出以下五个分段，不输出 JSON、Markdown 代码围栏、解释或额外内容：
-[TITLE]
-英文标题
-[GENRE]
-daily-science、daily-curiosity 或 light-entertainment
-[EN]
-完整英文正文
-[ZH]
-英文正文的完整中文翻译
-[TAKEAWAY]
-一条简短英文记忆句
-zh 必须逐段对应 en，完整保留事实、语气和段落关系；目标词在中文译文中仍以 **word** 原形保留，并在首次出现时自然说明中文含义。不要把 zh 写成词义表、摘要或额外评论。
-
-[Self-check]
-检查标题是否避开禁用开头和批量模板，是否呈现文章独有的场景、机制或结论；检查每个目标词是否在英文和中文中保留原形并加粗、语义正确；检查 zh 是否为完整译文而非词义表；检查正文是否是科普/轻娱乐日报；检查是否把来源逐句翻译；检查无敏感内容、无凭证信息、无虚假确定性。
+No JSON, code fences, preamble or explanation. Output exactly four blocks, each label on its own line:
+[T]
+a 4-9 word English title
+[E]
+the English body
+[C]
+the complete Chinese rendering
+[K]
+a one-sentence English takeaway

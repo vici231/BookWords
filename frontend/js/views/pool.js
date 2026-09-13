@@ -1,4 +1,4 @@
-/* views/pool.js — 词汇池视图：左栏单词本多选（搜索/筛选/全选/拖拽）+ 右栏本周池（搜索导入/移除/清空） */
+/* views/pool.js — 文章生成词组：悬浮单词本选择、搜索、勾选与移除。 */
 
 import { Api } from "../api.js";
 import { emit, MAX_STORY_CARDS, state } from "../state.js";
@@ -11,17 +11,19 @@ import { refreshSourcePicker } from "./source.js";
 
 export function addToPool(word) {
   if (state.pool.length >= MAX_STORY_CARDS) {
-    toast(`本周词汇池最多放入 ${MAX_STORY_CARDS} 个单词`);
+    toast(`文章生成区最多放入 ${MAX_STORY_CARDS} 个单词`);
     return false;
   }
   const key = String(word.word || "").toLowerCase();
   if (state.pool.some((w) => String(w.word || "").toLowerCase() === key)) {
-    toast(`「${word.word}」已在本周词汇池中`);
+    toast(`「${word.word}」已在文章生成区中`);
     return false;
   }
   state.pool.push({ ...word, addedAt: nowIso() });
+  state.targetSelection.add(key);
   state.poolUpdatedAt = nowIso();
   persist();
+  window.dispatchEvent(new CustomEvent("bookwords:pool-change"));
   renderStoryPoolView();
   return true;
 }
@@ -29,8 +31,10 @@ export function addToPool(word) {
 export function removeFromPool(wordStr) {
   const key = String(wordStr || "").toLowerCase();
   state.pool = state.pool.filter((w) => String(w.word || "").toLowerCase() !== key);
+  state.targetSelection.delete(key);
   state.poolUpdatedAt = nowIso();
   persist();
+  window.dispatchEvent(new CustomEvent("bookwords:pool-change"));
   renderStoryPoolView();
 }
 
@@ -48,26 +52,32 @@ function renderPoolList() {
   if (!list) return;
   const count = $("#story-pool-count");
   const updated = $("#story-pool-updated");
-  if (count) count.textContent = `${state.pool.length} / ${MAX_STORY_CARDS}`;
-  if ($("#word-picker-fab-count")) $("#word-picker-fab-count").textContent = state.pool.length;
+  const selectedCount = state.pool.filter((word) => state.targetSelection.has(String(word.word || "").toLowerCase())).length;
+  if (count) count.textContent = `${selectedCount} 已选 · ${state.pool.length} / ${MAX_STORY_CARDS}`;
   if (updated) updated.textContent = state.poolUpdatedAt ? `最近更新：${formatStamp(state.poolUpdatedAt, "") || "时间未知"}` : "尚未添加单词";
   list.innerHTML = state.pool.length
     ? state.pool.map((word) => `
-      <div class="pool-word-row" data-word="${esc(word.word)}">
+      <div class="pool-word-row${state.targetSelection.has(String(word.word || "").toLowerCase()) ? " is-target" : ""}" data-word="${esc(word.word)}">
+        <label class="pool-target-check" title="选择为本次目标词"><input type="checkbox" data-target-word="${esc(String(word.word || "").toLowerCase())}" ${state.targetSelection.has(String(word.word || "").toLowerCase()) ? "checked" : ""}><span>✓</span></label>
         <span class="pool-word-main"><strong>${esc(word.word)}</strong><small>${esc(wordbookPos(word.pos))} · ${esc(wordbookMeaning(word))}</small></span>
         <time>${esc(formatWordbookTime(word.addedAt))}</time>
-        <button class="btn-link pool-word-remove" type="button" data-word="${esc(word.word)}" title="移出词汇池">移除</button>
+        <button class="btn-link pool-word-remove" type="button" data-word="${esc(word.word)}" title="移出生成区">移除</button>
       </div>`).join("")
-    : `<div class="import-empty">词汇池还是空的。点击“选择生词”，或用上方搜索直接加入。</div>`;
+    : `<div class="import-empty">文章生成区还是空的。点击“选择生词”，或用上方搜索直接加入。</div>`;
   list.querySelectorAll(".pool-word-remove").forEach((button) => button.addEventListener("click", () => removeFromPool(button.dataset.word)));
+  list.querySelectorAll("[data-target-word]").forEach((input) => input.addEventListener("change", () => {
+    if (input.checked) state.targetSelection.add(input.dataset.targetWord);
+    else state.targetSelection.delete(input.dataset.targetWord);
+    window.dispatchEvent(new CustomEvent("bookwords:pool-change"));
+    renderPoolList();
+  }));
 }
 
 let wordPickerReturnFocus = null;
-let wordPickerDragState = null;
 
 function setWordPicker(open) {
   const backdrop = $("#word-picker-backdrop");
-  const trigger = $("#btn-open-word-picker");
+  const trigger = $("#btn-open-word-picker-inline");
   if (!backdrop || !trigger) return;
   if (open) {
     wordPickerReturnFocus = document.activeElement;
@@ -146,20 +156,22 @@ function addWbSelectionToPool() {
     if (!state.wbSelection.has(key)) continue;
     if (state.pool.some((w) => String(w.word || "").toLowerCase() === key)) continue;
     if (state.pool.length >= MAX_STORY_CARDS) {
-      toast(`本周词汇池最多放入 ${MAX_STORY_CARDS} 个单词`);
+      toast(`文章生成区最多放入 ${MAX_STORY_CARDS} 个单词`);
       break;
     }
     state.pool.push({ ...word, addedAt: oldTimes.get(key) || now });
+    state.targetSelection.add(key);
     added++;
   }
   state.wbSelection.clear();
   if (added) {
     state.poolUpdatedAt = nowIso();
     persist();
+    window.dispatchEvent(new CustomEvent("bookwords:pool-change"));
     emit("pool");
   }
   renderStoryPoolView();
-  toast(added ? `已加入 ${added} 个单词到本周词汇池` : "所选单词都已在本周词汇池中");
+  toast(added ? `已加入 ${added} 个单词到文章生成区` : "所选单词都已在文章生成区中");
   if (added) setWordPicker(false);
 }
 
@@ -198,7 +210,7 @@ async function renderPoolSearchResults() {
     const word = poolSearchWords.find((item) => item.word === button.dataset.word);
     if (!word) return;
     if (addToPool(word)) {
-      toast(`「${word.word}」已加入本周词汇池`);
+      toast(`「${word.word}」已加入文章生成区`);
       renderPoolSearchResults();
     }
   }));
@@ -207,7 +219,19 @@ async function renderPoolSearchResults() {
 /* ---------------- 事件绑定 ---------------- */
 
 export function bindPoolEvents() {
-  $("#btn-open-word-picker")?.addEventListener("click", () => setWordPicker(true));
+  $("#btn-open-word-picker-inline")?.addEventListener("click", () => setWordPicker(true));
+  $("#btn-toggle-pool-words")?.addEventListener("click", () => {
+    const dropdown = $("#pool-words-dropdown");
+    const button = $("#btn-toggle-pool-words");
+    if (!dropdown || !button) return;
+    const opening = dropdown.hidden;
+    dropdown.hidden = !opening;
+    button.setAttribute("aria-expanded", opening ? "true" : "false");
+    const title = button.querySelector("strong");
+    const note = button.querySelector("small");
+    if (title) title.textContent = opening ? "收起词汇" : "展开词汇";
+    if (note) note.textContent = opening ? "隐藏池中单词，继续后续操作" : "查看、勾选或移除池中单词";
+  });
   $("#btn-close-word-picker")?.addEventListener("click", () => setWordPicker(false));
   $("#word-picker-backdrop")?.addEventListener("click", (event) => {
     if (event.target === event.currentTarget) setWordPicker(false);
@@ -215,45 +239,18 @@ export function bindPoolEvents() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !$("#word-picker-backdrop")?.hidden) setWordPicker(false);
   });
-  /* 右下角 FAB 按钮拖动 */
-  const fabBtn = document.querySelector("#btn-open-word-picker");
-  document.addEventListener("mousedown", (e) => {
-    if (e.target !== fabBtn && !fabBtn?.contains(e.target)) return;
-    if (e.target.closest(".word-picker-fab-icon") || e.target.tagName === "IMG") return;
-    e.preventDefault();
-    const style = window.getComputedStyle(fabBtn);
-    const curLeft = parseFloat(style.left) || (window.innerWidth - parseFloat(style.right) - fabBtn.offsetWidth);
-    const curTop = parseFloat(style.top) || (window.innerHeight - parseFloat(style.bottom) - fabBtn.offsetHeight);
-    wordPickerDragState = { startX: e.clientX, startY: e.clientY, curLeft, curTop, el: fabBtn };
-    fabBtn.classList.add("is-dragging");
-    document.body.style.cursor = "grabbing";
-  });
-  document.addEventListener("mousemove", (e) => {
-    if (!wordPickerDragState) return;
-    const l = e.clientX - wordPickerDragState.startX + wordPickerDragState.curLeft;
-    const t = e.clientY - wordPickerDragState.startY + wordPickerDragState.curTop;
-    wordPickerDragState.el.style.left = l + "px";
-    wordPickerDragState.el.style.top = t + "px";
-    wordPickerDragState.el.style.right = "auto";
-    wordPickerDragState.el.style.bottom = "auto";
-  });
-  document.addEventListener("mouseup", () => {
-    if (wordPickerDragState) {
-      wordPickerDragState.el.classList.remove("is-dragging");
-      document.body.style.cursor = "";
-      wordPickerDragState = null;
-    }
-  });
   $("#btn-clear-pool").addEventListener("click", () => {
     state.pool = [];
+    state.targetSelection = new Set();
     state.poolUpdatedAt = nowIso();
     persist();
+    window.dispatchEvent(new CustomEvent("bookwords:pool-change"));
     state.lastStory = null;
     state.lastArticleId = "";
     state.practiceCompleted = false;
     renderStoryPoolView();
     renderPractice();
-    toast("本周词汇池已清空");
+    toast("文章生成区已清空");
   });
   const dropzoneHost = $("#story-pool-list");
   dropzoneHost.addEventListener("dragover", (event) => {
@@ -269,7 +266,7 @@ export function bindPoolEvents() {
     dropzoneHost.classList.remove("is-dragover");
     const key = String(event.dataTransfer?.getData("text/plain") || "").toLowerCase();
     const word = state.wordbook.find((item) => String(item.word || "").toLowerCase() === key);
-    if (word && addToPool(word)) toast(`「${word.word}」已加入本周词汇池`);
+    if (word && addToPool(word)) toast(`「${word.word}」已加入文章生成区`);
   });
   $("#wb-word-search").addEventListener("input", renderWbWordList);
   $("#wb-pos-filter").addEventListener("change", renderWbWordList);

@@ -1,10 +1,11 @@
 /* views/generate.js — 生成控制：难度滑条 / 长度 / 调参下拉 / 出版按钮 / 结果卡渲染 */
 
 import { Api } from "../api.js";
-import { MAX_STORY_CARDS, state } from "../state.js";
+import { emit, MAX_STORY_CARDS, state } from "../state.js";
+import { persist } from "../store.js";
 import { $, esc, formatBold, toast } from "../utils.js";
 import { saveArticle, dailyWeekInfo, genreLabelEn } from "../articles.js";
-import { renderPractice, withStoryGlosses } from "./practice.js";
+import { renderInlinePractice, renderPractice, withStoryGlosses } from "./practice.js";
 import { renderArticleBook } from "./storybook.js";
 import { aiDebugBegin, aiDebugEnd } from "./ai-debug.js";
 
@@ -23,20 +24,25 @@ export function recentMemoryCards(days = 3) {
     const stamp = new Date(article.lastPracticedAt || article.generatedAt || article.savedAt || "").getTime();
     (article.targetCards || []).forEach((card) => candidates.push({ card, stamp }));
   });
+  state.recentMistakes.forEach((item) => {
+    candidates.push({ card: item.card || { word: item.word }, stamp: new Date(item.wrongAt || "").getTime() });
+  });
   return candidates
     .filter((item) => Number.isFinite(item.stamp) && item.stamp >= start)
     .sort((a, b) => b.stamp - a.stamp)
     .map((item) => item.card)
     .filter((card) => {
       const key = String(card.word || "").toLowerCase();
-      if (!key || seen.has(key)) return false;
+      if (!key || seen.has(key) || state.masteredWords[key]) return false;
       seen.add(key);
       return true;
     });
 }
 
-function generationCards() {
-  return state.memoryScope === "recent_3d" ? recentMemoryCards(3) : state.pool;
+export function generationCards() {
+  return state.memoryScope === "recent_3d"
+    ? recentMemoryCards(state.coverageDays || 3)
+    : state.pool.filter((card) => state.targetSelection.has(String(card.word || "").toLowerCase()));
 }
 
 function diffLevel(v) {
@@ -58,7 +64,7 @@ export function updateDiffVal() {
 export function updateLengthVal() {
   const input = $("#length-slider");
   if (!input) return;
-  state.sliders.length = Math.max(180, Math.min(260, Number(input.value || 220)));
+  state.sliders.length = Math.max(180, Math.min(600, Number(input.value || 220)));
   $("#length-val").textContent = `约 ${state.sliders.length} 词`;
 }
 
@@ -123,227 +129,256 @@ function setLoading(on) {
   if (label) label.textContent = on ? "正在排版…" : "生成知乎英语日报";
 }
 
-let vortexRunId = 0;
-let vortexCleanup = null;
-/* Canvas 字母漩涡：保留原生成遮罩的蓝白 UI，只把未完成的转场替换为可中断的状态机。 */
-const vortexEase = (t) => t * t * t;
-const vortexClamp = (n, a = 0, b = 1) => Math.max(a, Math.min(b, n));
-const vortexLerp = (a, b, t) => a + (b - a) * t;
-const vortexRand = (a, b) => a + Math.random() * (b - a);
-const vortexInt = (a, b) => Math.floor(vortexRand(a, b + 1));
+let curtainRunId = 0;
+let curtainCleanup = null;
+/* 正方形英文窗帘：机制参考 motion-web char-curtain ——
+   18 条独立垂直 Verlet 串（无横向约束，指针才能「拨开」帘子）；
+   各向异性指针力 x 全量 / y *0.35，字母行保持可读、不揉成汤。
+   皮肤为 Bookwords 蓝；字母由用户参考单词循环构成；
+   识别吸入 = 字母暖色渐隐（像被认出来取走），进度条沿用 --vortex-progress。 */
+const curtainClamp = (n, a = 0, b = 1) => Math.max(a, Math.min(b, n));
+const curtainLerp = (a, b, t) => a + (b - a) * t;
+const curtainRand = (a, b) => a + Math.random() * (b - a);
+const curtainInt = (a, b) => Math.floor(curtainRand(a, b + 1));
 
-function playVortexAnimation(words, onComplete) {
+function playCurtainAnimation(words, onComplete) {
   const overlay = $("#generation-overlay");
   const orbit = overlay?.querySelector(".generation-orbit");
   if (!overlay || !orbit) return;
-  vortexCleanup?.();
-  vortexCleanup = null;
-  const runId = ++vortexRunId;
+  curtainCleanup?.();
+  curtainCleanup = null;
+  const runId = ++curtainRunId;
   const canvas = document.createElement("canvas");
-  canvas.className = "generation-vortex-canvas";
-  canvas.setAttribute("aria-label", "字母漩涡吸入动画");
+  canvas.className = "generation-curtain-canvas";
+  canvas.setAttribute("aria-label", "英文字母窗帘：划过拨开，点击加速");
   orbit.prepend(canvas);
+  const note = document.createElement("span");
+  note.className = "generation-curtain-note";
+  note.textContent = "划过拨开字母帘 · 点击加速吸入";
+  orbit.append(note);
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* 字母来自参考单词（大写、空格分词） */
   const sourceWords = words.map((word) => String(word.word || "").trim().toUpperCase()).filter(Boolean);
   const groups = [];
   for (let index = 0; index < sourceWords.length; index += 3) groups.push(sourceWords.slice(index, index + 3).join(" "));
   if (!groups.length) groups.push("DREAM BIG NOW");
   let groupIndex = 0;
   let chars = [...groups[groupIndex]];
-  const state = { phase: "idle", since: performance.now(), nextPick: 0, dpr: 1, w: 0, h: 0, cx: 0, cy: 0, radius: 0, font: 18, glow: .2, raf: 0, last: 0 };
-  const particles = [];
-  let letters = [];
+
+  /* —— Verlet 窗帘参数（正方形 COLS × ROWS） —— */
+  const COLS = 18, ROWS = 18, ROW_SPACING = 24;
+  const GRAVITY = reduced ? .4 : .22;
+  const DRAG = .03;
+  const SOLVER_PASSES = 4;
+  const HOME_PULL = .35;
+  const MOUSE_RADIUS = 84;
+  const MOUSE_FORCE = 4.6;
+  const MOUSE_Y_BIAS = .35;
+  const SPEED_FOR_FULL_FADE = 8;
+
+  const nodes = [];
+  const links = [];
+  const at = (c, r) => nodes[c * ROWS + r];
+  const S = { w: 0, h: 0, dpr: 1, cardW: 420, x0: 0, y0: 0, font: 16, phase: "idle", since: performance.now(), nextPick: 0, raf: 0 };
+
+  function layout() {
+    S.cardW = Math.min(S.w * .86, 430);
+    S.x0 = (S.w - S.cardW) / 2;
+    S.y0 = Math.max(16, (S.h - ROWS * ROW_SPACING) / 2);
+    S.font = Math.max(11, Math.min(20, ROW_SPACING * .72));
+  }
+
+  function build() {
+    nodes.length = 0; links.length = 0;
+    layout();
+    const colSpacing = S.cardW / (COLS - 1);
+    let i = 0;
+    for (let c = 0; c < COLS; c += 1) {
+      for (let r = 0; r < ROWS; r += 1) {
+        const x = S.x0 + c * colSpacing;
+        const y = S.y0 + r * ROW_SPACING;
+        nodes.push({ x, y, oldX: x, oldY: y, initX: x, initY: y, char: chars[i++ % chars.length], isAnchor: r === 0, status: "pending", started: 0, duration: 0 });
+      }
+    }
+    for (let c = 0; c < COLS; c += 1) for (let r = 1; r < ROWS; r += 1) links.push({ a: at(c, r - 1), b: at(c, r), len: ROW_SPACING });
+  }
 
   function resize() {
     const rect = orbit.getBoundingClientRect();
-    state.w = Math.max(1, rect.width);
-    state.h = Math.max(1, rect.height);
-    state.dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.round(state.w * state.dpr);
-    canvas.height = Math.round(state.h * state.dpr);
-    canvas.style.width = `${state.w}px`;
-    canvas.style.height = `${state.h}px`;
-    ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
-    state.cx = state.w * .5;
-    state.cy = state.h * .5;
-    state.radius = Math.min(state.w, state.h) * .36;
-    const arc = (Math.PI * 2 * state.radius / Math.max(chars.length, 1)) * .7;
-    state.font = Math.max(14, Math.min(48, Math.min(arc, 48 - chars.length * .72)));
-  }
-
-  function resetLetters() {
-    letters = chars.map((char, index) => ({
-      char,
-      angle: -Math.PI / 2 + (index / chars.length) * Math.PI * 2,
-      seed: Math.random() * Math.PI * 2,
-      dir: Math.random() > .5 ? 1 : -1,
-      twist: vortexRand(.75, 1.25),
-      status: "pending",
-      started: 0,
-      duration: vortexRand(1500, 2200),
-      particleCount: vortexInt(2, 5),
-      particlesMade: 0,
-      nextParticle: 0,
-    }));
+    if (!rect.width) return;
+    S.w = rect.width; S.h = rect.height;
+    S.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(S.w * S.dpr);
+    canvas.height = Math.round(S.h * S.dpr);
+    canvas.style.width = `${S.w}px`;
+    canvas.style.height = `${S.h}px`;
+    ctx.setTransform(S.dpr, 0, 0, S.dpr, 0, 0);
+    layout();
+    /* 只移挂点，帘身自己摆过去 */
+    const colSpacing = S.cardW / (COLS - 1);
+    for (let c = 0; c < COLS; c += 1) {
+      const head = at(c, 0);
+      if (!head) continue;
+      const nx = S.x0 + c * colSpacing;
+      head.x = nx; head.oldX = nx; head.initX = nx; head.initY = S.y0;
+    }
   }
 
   function setPhase(phase, now) {
-    state.phase = phase;
-    state.since = now;
-    if (phase === "sucking") state.nextPick = now;
+    S.phase = phase;
+    S.since = now;
+    if (phase === "sucking") S.nextPick = now;
     const label = $("#generation-status-text");
     if (label && overlay.dataset.phase !== "choice") {
       label.textContent = overlay.dataset.phase === "compose" ? "正在编排文章" : phase === "idle" ? "等待识别" : phase === "waiting" ? "识别完成" : "正在吸入词汇";
     }
   }
 
-  function startLetter(letter, now, boosted = false) {
-    letter.status = "sucking";
-    letter.started = now;
-    letter.duration = boosted ? vortexRand(700, 1050) : vortexRand(1500, 2200);
-    letter.particleCount = vortexInt(2, 5);
-    letter.particlesMade = 0;
-    letter.nextParticle = now + vortexRand(70, 190);
+  function startNode(node, now, boosted = false) {
+    node.status = "sucking";
+    node.started = now;
+    node.duration = boosted ? curtainRand(600, 900) : curtainRand(1400, 2100);
   }
 
   function boost(now) {
-    if (state.phase === "waiting") {
-      startNext();
-      return;
-    }
-    if (state.phase === "idle") setPhase("sucking", now);
-    letters.filter((letter) => letter.status === "pending").forEach((letter, index) => startLetter(letter, now + index * 38, true));
-    letters.filter((letter) => letter.status === "sucking").forEach((letter) => { letter.duration = Math.min(letter.duration, 900); });
-    state.nextPick = Number.POSITIVE_INFINITY;
+    if (S.phase === "waiting") { startNext(); return; }
+    if (S.phase === "idle") setPhase("sucking", now);
+    nodes.filter((n) => n.status === "pending" && !n.isAnchor).forEach((n, index) => startNode(n, now + index * 6, true));
+    nodes.filter((n) => n.status === "sucking").forEach((n) => { n.duration = Math.min(n.duration, 800); });
+    S.nextPick = Number.POSITIVE_INFINITY;
   }
 
   function startNext() {
-    if (runId !== vortexRunId) return;
-    orbit.classList.remove("is-vortex-done");
+    if (runId !== curtainRunId) return;
     groupIndex = (groupIndex + 1) % groups.length;
     chars = [...groups[groupIndex]];
-    resize();
-    resetLetters();
-    particles.length = 0;
+    build();
     setPhase("idle", performance.now());
   }
 
-  function spawnParticle(letter, now, pos) {
-    const dx = pos.x - state.cx;
-    const dy = pos.y - state.cy;
-    particles.push({
-      x: pos.x, y: pos.y, radius: Math.hypot(dx, dy), angle: Math.atan2(dy, dx),
-      dir: letter.dir, born: now, life: vortexRand(400, 900), size: vortexRand(1.2, 2.7), trail: [],
-    });
+  /* —— 指针：各向异性排斥（x 全量、y *0.35） —— */
+  let mouseX = 0, mouseY = 0, mouseActive = false;
+  function onMove(event) {
+    const rect = canvas.getBoundingClientRect();
+    mouseX = event.clientX - rect.left;
+    mouseY = event.clientY - rect.top;
+    mouseActive = event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
   }
+  overlay.addEventListener("pointermove", onMove, { passive: true });
+  overlay.addEventListener("pointerleave", () => { mouseActive = false; });
 
-  function letterPosition(letter, progress, now) {
-    if (letter.status !== "sucking") {
-      const float = Math.sin(now * .0013 + letter.seed) * 2.2;
-      const angle = letter.angle + Math.sin(now * .00045 + letter.seed) * .008;
-      return { x: state.cx + Math.cos(angle) * (state.radius + float), y: state.cy + Math.sin(angle) * (state.radius + float), angle };
+  function step() {
+    for (const n of nodes) {
+      const vx = (n.x - n.oldX) * (1 - DRAG);
+      const vy = (n.y - n.oldY) * (1 - DRAG);
+      n.oldX = n.x; n.oldY = n.y;
+      n.x += vx; n.y += vy + (n.isAnchor ? 0 : GRAVITY);
     }
-    const eased = vortexEase(vortexClamp(progress));
-    const angle = letter.angle + letter.dir * eased * letter.twist;
-    const radius = state.radius * (1 - eased);
-    const offset = Math.sin(eased * Math.PI * 2 + letter.seed) * state.radius * .055 * (1 - eased);
-    return { x: state.cx + Math.cos(angle) * radius - Math.sin(angle) * offset, y: state.cy + Math.sin(angle) * radius + Math.cos(angle) * offset, angle };
+    for (const n of nodes) {
+      if (!n.isAnchor) continue;
+      n.x += (n.initX - n.x) * HOME_PULL;
+      n.y += (n.initY - n.y) * HOME_PULL;
+    }
+    if (mouseActive && !reduced) {
+      for (const n of nodes) {
+        const dx = n.x - mouseX, dy = n.y - mouseY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist >= MOUSE_RADIUS || dist === 0) continue;
+        const pct = 1 - dist / MOUSE_RADIUS;
+        const force = pct * pct * MOUSE_FORCE;
+        const grip = n.isAnchor ? .75 : 1;
+        n.x += (dx / dist) * force * grip;
+        n.y += (dy / dist) * force * MOUSE_Y_BIAS * grip;
+      }
+    }
+    for (let pass = 0; pass < SOLVER_PASSES; pass += 1) {
+      for (const l of links) {
+        const dx = l.b.x - l.a.x, dy = l.b.y - l.a.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist === 0) continue;
+        const pct = ((l.len - dist) / dist) * .5;
+        const ox = dx * pct, oy = dy * pct;
+        l.a.x -= ox; l.a.y -= oy;
+        l.b.x += ox; l.b.y += oy;
+      }
+    }
   }
 
-  function drawCenter(now, activeCount) {
-    const target = .24 + Math.min(1, activeCount * .13) + (state.phase === "waiting" ? .08 : 0);
-    state.glow += (target - state.glow) * .08;
-    const pulse = .5 + .5 * Math.sin(now * .004);
-    const radius = 5 + activeCount * 1.8 + pulse * 1.5 + state.glow * 2;
-    ctx.fillStyle = `rgba(255,255,255,${.78 + state.glow * .16})`;
-    ctx.shadowColor = `rgba(23,114,246,${.28 + state.glow * .22})`;
-    ctx.shadowBlur = 10 + activeCount * 2;
-    ctx.beginPath(); ctx.arc(state.cx, state.cy, radius, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
-  }
-
-  function renderParticles(now) {
-    for (let i = particles.length - 1; i >= 0; i -= 1) {
-      const particle = particles[i];
-      const p = (now - particle.born) / particle.life;
-      if (p >= 1) { particles.splice(i, 1); continue; }
-      const r = particle.radius * (1 - p);
-      const angle = particle.angle + particle.dir * p * 1.7;
-      const x = state.cx + Math.cos(angle) * r;
-      const y = state.cy + Math.sin(angle) * r;
-      ctx.fillStyle = `rgba(242,145,83,${(1 - p) * .9})`;
-      ctx.beginPath(); ctx.arc(x, y, particle.size * (1 - p * .35), 0, Math.PI * 2); ctx.fill();
+  function draw(now) {
+    ctx.clearRect(0, 0, S.w, S.h);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `500 ${S.font}px "Space Grotesk", "PingFang SC", "Microsoft YaHei", sans-serif`;
+    for (const n of nodes) {
+      if (n.isAnchor || n.status === "done") continue;
+      let alpha, rgb;
+      if (n.status === "sucking") {
+        const p = curtainClamp((now - n.started) / n.duration);
+        const warm = curtainClamp(p / .8);
+        rgb = `${Math.round(curtainLerp(23, 242, warm))},${Math.round(curtainLerp(114, 145, warm))},${Math.round(curtainLerp(246, 83, warm))}`;
+        alpha = p < .55 ? .95 : curtainLerp(.95, 0, (p - .55) / .45);
+      } else {
+        const speed = Math.hypot(n.x - n.oldX, n.y - n.oldY);
+        const fade = curtainClamp(speed / SPEED_FOR_FULL_FADE);
+        rgb = `${Math.round(curtainLerp(23, 122, fade))},${Math.round(curtainLerp(114, 168, fade))},${Math.round(curtainLerp(246, 250, fade))}`;
+        alpha = curtainLerp(.78, .3, fade);
+      }
+      ctx.fillStyle = `rgba(${rgb},${alpha.toFixed(3)})`;
+      ctx.fillText(n.char, n.x, n.y);
     }
   }
 
   function tick(now) {
-    if (runId !== vortexRunId || overlay.hidden) return;
-    if (!state.last) state.last = now;
-    if (state.phase === "idle" && now - state.since >= 1200) setPhase("sucking", now);
-    if (state.phase === "sucking") {
-      while (now >= state.nextPick && letters.some((letter) => letter.status === "pending")) {
-        const pending = letters.filter((letter) => letter.status === "pending");
-        startLetter(pending[vortexInt(0, pending.length - 1)], now);
-        const ratio = 1 - pending.length / letters.length;
-        state.nextPick = now + vortexLerp(350, 120, ratio);
+    if (runId !== curtainRunId || overlay.hidden) return;
+    if (S.phase === "idle" && now - S.since >= 1200) setPhase("sucking", now);
+    if (S.phase === "sucking") {
+      const pending = () => nodes.filter((n) => n.status === "pending" && !n.isAnchor);
+      while (now >= S.nextPick && pending().length) {
+        const list = pending();
+        startNode(list[curtainInt(0, list.length - 1)], now);
+        S.nextPick = now + curtainLerp(320, 110, 1 - list.length / Math.max(1, nodes.length));
       }
-      letters.forEach((letter) => {
-        if (letter.status !== "sucking") return;
-        const progress = vortexClamp((now - letter.started) / letter.duration);
-        const pos = letterPosition(letter, progress, now);
-        while (letter.particlesMade < letter.particleCount && now >= letter.nextParticle && progress < .95) {
-          spawnParticle(letter, now, pos); letter.particlesMade += 1; letter.nextParticle += vortexRand(120, 260);
-        }
-        if (progress >= 1) letter.status = "done";
-      });
-      if (letters.every((letter) => letter.status === "done")) { setPhase("waiting", now); orbit.classList.add("is-vortex-done"); }
-    } else if (state.phase === "waiting" && now - state.since >= 600) {
+      for (const n of nodes) if (n.status === "sucking" && now - n.started >= n.duration) n.status = "done";
+      if (!pending().length && !nodes.some((n) => n.status === "sucking")) setPhase("waiting", now);
+    } else if (S.phase === "waiting" && now - S.since >= 600) {
       startNext();
     }
 
-    ctx.clearRect(0, 0, state.w, state.h);
-    let activeCount = 0; let progressTotal = 0;
-    letters.forEach((letter) => {
-      let progress = letter.status === "done" ? 1 : 0;
-      if (letter.status === "sucking") { activeCount += 1; progress = vortexClamp((now - letter.started) / letter.duration); }
-      progressTotal += progress;
-      if (letter.status === "done" || letter.char === " ") return;
-      const pos = letterPosition(letter, progress, now);
-      const warm = letter.status === "sucking" ? vortexClamp(progress / .8) : 0;
-      const r = Math.round(vortexLerp(79, 242, warm));
-      const g = Math.round(vortexLerp(106, 145, warm));
-      const b = Math.round(vortexLerp(145, 83, warm));
-      const alpha = letter.status === "sucking" ? (progress < .55 ? .95 : vortexLerp(.95, 0, (progress - .55) / .45)) : .72;
-      const stretch = letter.status === "sucking" ? 1 + 5 * vortexEase(progress) : 1;
-      const compress = letter.status === "sucking" ? vortexLerp(1, .78, vortexEase(progress)) : 1;
-      ctx.save(); ctx.translate(pos.x, pos.y); let rotation = pos.angle + Math.PI / 2; if (Math.cos(pos.angle) < 0) rotation += Math.PI; ctx.rotate(rotation); ctx.scale(compress, stretch);
-      ctx.font = `400 ${state.font}px Georgia, "Times New Roman", serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`; ctx.fillText(letter.char, 0, 0); ctx.restore();
-    });
-    renderParticles(now); drawCenter(now, activeCount);
-    const progressValue = state.phase === "waiting" ? 1 : progressTotal / Math.max(letters.length, 1);
+    step();
+    draw(now);
+
+    const body = nodes.filter((n) => !n.isAnchor);
+    const done = body.reduce((acc, n) => acc + (n.status === "done" ? 1 : n.status === "sucking" ? curtainClamp((now - n.started) / n.duration) : 0), 0);
+    const progressValue = S.phase === "waiting" ? 1 : done / Math.max(1, body.length);
     const progressBar = overlay.querySelector(".generation-progress");
     if (progressBar) progressBar.style.setProperty("--vortex-progress", `${Math.round(progressValue * 100)}%`);
-    state.raf = requestAnimationFrame(tick);
+    S.raf = requestAnimationFrame(tick);
   }
 
-  resize(); resetLetters();
+  resize(); build();
   const activate = () => boost(performance.now());
   const onPointer = (event) => { if (event.target === overlay || event.target === orbit || event.target === canvas) activate(); };
   const onKey = (event) => { if (event.code === "Space" && !event.repeat) { event.preventDefault(); activate(); } };
   overlay.addEventListener("pointerdown", onPointer, { passive: true });
   window.addEventListener("keydown", onKey);
   window.addEventListener("resize", resize, { passive: true });
-  state.raf = requestAnimationFrame(tick);
+  S.raf = requestAnimationFrame(tick);
   const cleanup = () => {
-    cancelAnimationFrame(state.raf);
+    cancelAnimationFrame(S.raf);
     overlay.removeEventListener("pointerdown", onPointer);
+    overlay.removeEventListener("pointermove", onMove);
+    overlay.removeEventListener("pointerleave", () => { mouseActive = false; });
     window.removeEventListener("keydown", onKey);
     window.removeEventListener("resize", resize);
     canvas.remove();
-    if (runId === vortexRunId) onComplete?.();
+    note.remove();
+    if (runId === curtainRunId) onComplete?.();
   };
-  vortexCleanup = cleanup;
+  curtainCleanup = cleanup;
   return cleanup;
 }
 
@@ -362,16 +397,16 @@ function generationOverlay(on, phase = "wait") {
     if (stage) stage.hidden = false;
     if (wasHidden) {
       const words = generationCards().slice(0, 80);
-      playVortexAnimation(words);
+      playCurtainAnimation(words);
     }
     const wordHost = stage?.querySelector(".generation-stage-words");
     if (wordHost) {
       wordHost.innerHTML = generationCards().slice(0, 20).map((word, index) => `<span style="--i:${index}">${esc(word.word || "")}</span>`).join("");
     }
   } else {
-    vortexCleanup?.();
-    vortexCleanup = null;
-    vortexRunId += 1;
+    curtainCleanup?.();
+    curtainCleanup = null;
+    curtainRunId += 1;
     overlay.hidden = true;
     overlay.classList.remove("has-generation-choice");
     document.body.classList.remove("is-generating");
@@ -406,21 +441,12 @@ function chooseGenerationMode() {
   });
 }
 
-async function generate() {
+export async function generateConfirmedArticle(signal = null) {
   if (state.generating) return;
   const need = state.minCards || 3; /* 由 /api/meta 下发，前后端单一来源 */
   const candidateCards = generationCards();
   if (candidateCards.length < need) {
-    toast(`故事需要至少 ${need} 张卡牌`);
-    return;
-  }
-  if (state.source === "auto") {
-    toast("请先在搜索中选择一个匹配题材");
-    return;
-  }
-  if (state.source !== "original" && !state.sourceSelection) {
-    toast("请先选择一个题材来源");
-    return;
+    throw new Error(`故事需要至少 ${need} 张卡牌`);
   }
   setLoading(true);
   generationOverlay(true, "wait");
@@ -428,18 +454,29 @@ async function generate() {
   let debugShown = false;
   try {
     const words = state.pool.slice(0, MAX_STORY_CARDS).map(({ addedAt, ...word }) => word);
-    const recentCards = recentMemoryCards(3).slice(0, 80).map(({ addedAt, ...word }) => word);
-    const options = { memoryScope: state.memoryScope, language: state.articleLanguage, recentCards };
+    const recentCards = recentMemoryCards(state.coverageDays || 3).slice(0, 80).map(({ addedAt, ...word }) => word);
+    const options = {
+      memoryScope: state.memoryScope,
+      language: state.articleLanguage,
+      recentCards,
+      confirmedGroup: state.selectedGroup,
+      lockedWords: Array.from(state.lockedWords),
+      excludedWords: Array.from(state.excludedWords),
+      originalTopic: state.originalTopic,
+      signal,
+    };
     let data = await Api.generate("story", words, diffLevel(state.diff), state.sliders, state.source, state.sourceSelection, options);
     aiDebugEnd(data.debug || null, !data.error, data.error);
     debugShown = true;
     if (data.error) throw new Error(data.error);
     generationOverlay(true, "compose");
     renderResult(data);
+    return data;
   } catch (err) {
     /* 前置校验（卡牌不足等）与网络错误拿不到 trace，只显示错误行 */
     if (!debugShown) aiDebugEnd(err.data?.debug || null, false, err.data?.error || err.message);
-    toast("生成失败：" + err.message);
+    if (err.name !== "AbortError") toast("生成失败：" + err.message);
+    throw err;
   } finally {
     setLoading(false);
     setTimeout(() => generationOverlay(false), 520);
@@ -450,6 +487,7 @@ export function renderResult(data) {
   const box = $("#result");
   if (data.story) {
     const s = data.story;
+    state.lastGeneration = data;
     state.lastStory = s;
     const selectedCards = (data.sorting?.selected_group?.words || []).map((word) => candidateCardByWord(word)).filter(Boolean);
     const issue = saveArticle(s, {
@@ -463,19 +501,22 @@ export function renderResult(data) {
     const week = dailyWeekInfo(issue.generatedAt);
     box.innerHTML = `
       <div class="result-card">
+        <div class="result-mode-tabs" role="tablist"><button class="is-active" type="button" data-result-mode="reading">阅读</button><button type="button" data-result-mode="practice">练习</button></div>
+        <div data-result-pane="reading">
         <div class="result-publication"><span>ZHIHU ENGLISH DAILY</span><span>${esc(week.label)} · ${esc(genreLabelEn(issue.genre))}</span></div>
         <h3 class="result-title">${esc(s.title || "知乎英语日报")}</h3>
         <p class="result-dateline">${esc(s.dateline || "Zhihu Daily")} · 知乎英语日报编辑台</p>
-        <div class="result-language-block"><span>${state.articleLanguage === "zh" ? "中文呈现" : "ENGLISH"}</span><p class="result-en">${formatBold(state.articleLanguage === "zh" ? s.zh : s.en)}</p></div>
+        <div class="result-language-block"><span>${state.articleLanguage === "zh" ? "中文呈现" : "ENGLISH"}</span><p class="result-en">${interactiveWords(state.articleLanguage === "zh" ? s.zh : s.en)}</p></div>
         ${s.takeaway ? `<p class="result-takeaway"><span>Takeaway</span>${esc(s.takeaway)}</p>` : ""}
-        <div class="result-language-block result-translation"><span>${state.articleLanguage === "zh" ? "ENGLISH REFERENCE" : "中文翻译"}</span><p class="result-cn">${formatBold(state.articleLanguage === "zh" ? s.en : (s.zh || withStoryGlosses(s.cn, s)))}</p></div>
+        <div class="result-language-block result-translation"><span>${state.articleLanguage === "zh" ? "ENGLISH REFERENCE" : "中文翻译"}</span><p class="result-cn">${interactiveWords(state.articleLanguage === "zh" ? s.en : (s.zh || withStoryGlosses(s.cn, s)))}</p></div>
         <p class="newspaper-source-note">${esc(s.source_note || "来源：AI 原创生成｜Bookwords 英语学习材料")}${s.source_url ? ` · <a href="${esc(s.source_url)}" target="_blank" rel="noreferrer">查看原链接</a>` : ""}</p>
-        <div class="result-actions"><div class="result-tip">这一期已存入日报存档，练习已在词汇池下方准备好。</div><button class="result-practice-link" type="button">开始填空练习 →</button></div>
+        ${s.validation_warnings?.length ? `<div class="article-quality-warning"><strong>校对提醒</strong><span>${esc(s.validation_warnings.join("；"))}。可返回文章方案调整，或重新生成。</span></div>` : ""}
+        </div><div data-result-pane="practice" hidden><div id="inline-practice"></div></div>
       </div>`;
-    box.querySelector(".result-practice-link").addEventListener("click", () => {
-      $("#practice-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+    box.querySelectorAll("[data-result-mode]").forEach((button) => button.addEventListener("click", () => setResultMode(button.dataset.resultMode)));
+    box.querySelectorAll("[data-read-word]").forEach((button) => button.addEventListener("click", () => openWordPopup(button.dataset.readWord, button.closest("p")?.textContent || "")));
     renderPractice();
+    renderInlinePractice();
   }
   box.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
@@ -485,7 +526,6 @@ export function bindGenerateEvents() {
   $("#length-slider").addEventListener("input", updateLengthVal);
   Object.keys(PARAM_META).forEach(wireParamSelect);
   document.addEventListener("click", closeTuneDropdowns);
-  $("#btn-generate").addEventListener("click", generate);
   document.querySelectorAll('input[name="memory-scope"]').forEach((input) => input.addEventListener("change", (event) => {
     state.memoryScope = event.target.value === "recent_3d" ? "recent_3d" : "pool";
     const count = recentMemoryCards(3).length;
@@ -498,7 +538,70 @@ export function bindGenerateEvents() {
   }));
 }
 
+function interactiveWords(text) {
+  return esc(text).replace(/\*\*([^*]+)\*\*/g, (_, word) => {
+    const key = String(word).trim().toLowerCase();
+    return `<button class="reading-word${state.masteredWords[key] ? " is-mastered" : ""}" type="button" data-read-word="${esc(key)}">${esc(word)}</button>`;
+  }).replace(/\n/g, "<br>");
+}
+
+function activeTargetCard(key) {
+  const article = state.articles.find((item) => item.id === state.lastArticleId);
+  return (article?.targetCards || []).find((card) => String(card.word || "").toLowerCase() === key)
+    || state.wordbook.find((card) => String(card.word || "").toLowerCase() === key)
+    || generationCards().find((card) => String(card.word || "").toLowerCase() === key);
+}
+
+function openWordPopup(key, context) {
+  const card = activeTargetCard(key) || { word: key };
+  const saved = state.wordbook.some((item) => String(item.word || "").toLowerCase() === key);
+  const mastered = Boolean(state.masteredWords[key]);
+  const modal = $("#reading-word-modal");
+  $("#reading-word-title").textContent = card.word || key;
+  $("#reading-word-phonetic").textContent = card.phonetic || "暂无音标";
+  $("#reading-word-meaning").textContent = `${card.pos || "词汇"} · ${card.meaning_cn || card.meaning || card.meaning_en || "暂无释义"}`;
+  const sentence = String(context || "").split(/(?<=[.!?。！？])\s*/).find((part) => part.toLowerCase().includes(key)) || context;
+  $("#reading-word-context").textContent = sentence;
+  const save = $("#btn-reading-save-word");
+  save.disabled = saved;
+  save.textContent = saved ? "已在单词本" : "加入单词本";
+  save.dataset.word = key;
+  const master = $("#btn-reading-master-word");
+  master.textContent = mastered ? "取消已掌握" : "标记已掌握";
+  master.dataset.word = key;
+  modal.hidden = false;
+}
+
+export function setResultMode(mode) {
+  state.resultMode = mode === "practice" ? "practice" : "reading";
+  document.querySelectorAll("[data-result-mode]").forEach((button) => button.classList.toggle("is-active", button.dataset.resultMode === state.resultMode));
+  document.querySelectorAll("[data-result-pane]").forEach((pane) => (pane.hidden = pane.dataset.resultPane !== state.resultMode));
+  if (state.resultMode === "practice") renderInlinePractice();
+}
+
+export function bindReadingWordEvents() {
+  $("#btn-close-reading-word")?.addEventListener("click", () => ($("#reading-word-modal").hidden = true));
+  $("#reading-word-modal")?.addEventListener("click", (event) => { if (event.target.id === "reading-word-modal") event.currentTarget.hidden = true; });
+  $("#btn-reading-save-word")?.addEventListener("click", (event) => {
+    const card = activeTargetCard(event.currentTarget.dataset.word);
+    if (!card) return;
+    if (!state.wordbook.some((item) => String(item.word || "").toLowerCase() === String(card.word || "").toLowerCase())) {
+      state.wordbook.unshift({ ...card, savedAt: new Date().toISOString() });
+      persist(); emit("wordbook"); toast(`「${card.word}」已加入单词本`);
+    }
+    event.currentTarget.disabled = true; event.currentTarget.textContent = "已在单词本";
+  });
+  $("#btn-reading-master-word")?.addEventListener("click", (event) => {
+    const key = event.currentTarget.dataset.word;
+    if (state.masteredWords[key]) delete state.masteredWords[key]; else state.masteredWords[key] = new Date().toISOString();
+    persist();
+    event.currentTarget.textContent = state.masteredWords[key] ? "取消已掌握" : "标记已掌握";
+    document.querySelectorAll(`[data-read-word="${CSS.escape(key)}"]`).forEach((word) => word.classList.toggle("is-mastered", Boolean(state.masteredWords[key])));
+  });
+}
+
 function candidateCardByWord(word) {
   const key = String(word || "").toLowerCase();
   return generationCards().find((card) => String(card.word || "").toLowerCase() === key) || null;
 }
+

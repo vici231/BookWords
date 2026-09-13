@@ -48,6 +48,9 @@ export function updateNavIndicator() {
 
 export function bindNavigation() {
   document.querySelectorAll("[data-view]").forEach((item) => {
+    /* 首页内的导航（磁贴 / 叠层卡 / 步骤卡 / CTA）由 home.js 的「纸张扫过」
+       转场统一接管：这里若直接绑定，视图会瞬间切走、扫幕动画失效。 */
+    if (item.closest("#home-view")) return;
     item.addEventListener("click", () => showView(item.dataset.view));
   });
   updateNavIndicator();

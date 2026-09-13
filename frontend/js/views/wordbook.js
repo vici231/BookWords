@@ -2,6 +2,7 @@
 
 import { state, emit } from "../state.js";
 import { persist } from "../store.js";
+import { Api } from "../api.js";
 import { $, esc, formatWordbookTime, nowIso, parseStamp, toast, wordbookMeaning, wordbookPos, formatWordbookDate } from "../utils.js";
 import { openWordDetail } from "./library.js";
 import { renderArticleBook } from "./storybook.js";
@@ -30,6 +31,56 @@ export function removeFromWordbook(word) {
   state.wordbook = state.wordbook.filter((w) => String(w.word || "").toLowerCase() !== key);
   persist();
   emit("wordbook");
+}
+
+/* —— 手机端：单词本顶部搜索栏（≤980px 显示）——
+   与搜索词库同款交互：搜全词库 → 结果行可直接收藏；清空即收起，露出单词本列表。 */
+export function bindWordbookMobileSearch() {
+  const input = $("#wb-mobile-search");
+  const box = $("#wb-mobile-lib");
+  if (!input || !box) return;
+  const wrap = input.closest(".wb-mobile-search");
+  const renderRows = (words) => {
+    if (wrap) wrap.classList.toggle("has-results", words.length > 0);
+    box.classList.toggle("has-results", words.length > 0);
+    box.innerHTML = words.map((w) => {
+      const key = String(w.word || "").toLowerCase();
+      const saved = state.wordbook.some((item) => String(item.word || "").toLowerCase() === key);
+      const level = w.level || (Array.isArray(w.levels) ? w.levels.join(" / ") : "");
+      return `<div class="lib-row"><span class="lib-row-main"><strong>${esc(w.word)}</strong><small>${esc(wordbookPos(w.pos))} · ${esc(wordbookMeaning(w))}</small></span>${level ? `<span class="lib-row-level">${esc(level)}</span>` : ""}${saved ? `<button class="btn-link lib-row-unsave wb-in-pool is-saved" type="button" data-word="${esc(w.word)}" title="点击取消收藏">已收藏</button>` : `<button class="btn-link lib-row-save" type="button" data-word="${esc(w.word)}">♡ 收藏</button>`}</div>`;
+    }).join("");
+    box.querySelectorAll(".lib-row-save").forEach((button) => button.addEventListener("click", () => {
+      const word = words.find((item) => item.word === button.dataset.word);
+      if (!word) return;
+      saveToWordbook(word);
+      renderRows(words);
+    }));
+    box.querySelectorAll(".lib-row-unsave").forEach((button) => button.addEventListener("click", () => {
+      removeFromWordbook(button.dataset.word);
+      toast(`「${button.dataset.word}」已取消收藏`);
+      renderRows(words);
+    }));
+  };
+  let timer;
+  input.addEventListener("input", () => {
+    const q = input.value.trim();
+    clearTimeout(timer);
+    if (!q) {
+      box.hidden = true; box.classList.remove("has-results"); box.innerHTML = "";
+      if (wrap) wrap.classList.remove("has-results");
+      return;
+    }
+    timer = setTimeout(async () => {
+      try {
+        const r = await Api.searchWords(q, "all", 30, "");
+        const words = r.words || [];
+        box.hidden = words.length === 0;
+        renderRows(words);
+      } catch (err) {
+        toast("搜索失败：" + err.message);
+      }
+    }, 150);
+  });
 }
 
 function sortedWordbook() {

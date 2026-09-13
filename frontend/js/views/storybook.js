@@ -4,10 +4,11 @@
    只渲染当前可见视图内的容器，切换视图时由 router 重新触发渲染。 */
 
 import { state } from "../state.js";
-import { $, esc } from "../utils.js";
-import { dailyWeekInfo, localPeriodicalGroups, weekGroups, weekWordCount } from "../articles.js";
+import { persist } from "../store.js";
+import { $, esc, toast } from "../utils.js";
+import { dailyWeekInfo, deleteArticle, localPeriodicalGroups, weekGroups, weekWordCount } from "../articles.js";
 import { newspaperIssueCoverBody } from "../newspaper/markup.js";
-import { openIssue, openNewspaper } from "../newspaper/reader.js";
+import { openIssue, openIssueArticles, openNewspaper } from "../newspaper/reader.js";
 import { downloadWordArticle, printNewspaper } from "../newspaper/export.js";
 import { openPracticeArticle } from "./practice.js";
 
@@ -18,6 +19,7 @@ function weekGroupHtml(group, isCurrent) {
       <span class="weekly-toc-no">${String(index + 1).padStart(2, "0")}</span>
       <span class="weekly-toc-title">${esc(article.title || article.story?.title || "知乎英语日报")}</span>
       <button class="weekly-practice-button${article.completedAt ? " is-complete" : ""}" type="button" data-article-id="${esc(article.id)}">${article.completedAt ? "再练习" : "练习"}</button>
+      <button class="weekly-delete-button" type="button" data-delete-article="${esc(article.id)}">删除</button>
     </li>`).join("");
   return `
   <section class="article-week-group${isCurrent ? " is-current" : ""}">
@@ -39,7 +41,14 @@ function weekGroupHtml(group, isCurrent) {
 function bindArticleList(root) {
   root.querySelectorAll(".weekly-cover-button").forEach((button) => button.addEventListener("click", () => openIssue(button.dataset.weekKey)));
   root.querySelectorAll(".weekly-practice-button").forEach((button) => button.addEventListener("click", () => openPracticeArticle(button.dataset.articleId)));
+  root.querySelectorAll("[data-delete-article]").forEach((button) => button.addEventListener("click", () => removeArticle(button.dataset.deleteArticle)));
   root.querySelectorAll(".weekly-cover-button").forEach((button) => fitWeeklyCover(button));
+}
+
+function removeArticle(id) {
+  const article = state.articles.find((item) => item.id === id);
+  if (!article || !window.confirm(`确定删除《${article.title || "知乎英语日报"}》吗？删除后不可恢复。`)) return;
+  deleteArticle(id);
 }
 
 function fitWeeklyCover(button) {
@@ -47,8 +56,8 @@ function fitWeeklyCover(button) {
   const page = button.querySelector(".weekly-cover-page");
   if (!viewport || !page) return;
   const scale = Math.min(0.72, Math.max(0.28, (viewport.clientWidth - 2) / 980));
-  const frame = page.querySelector(".paper-cover-frame");
-  const sourceHeight = Math.max(930, frame?.scrollHeight || page.scrollHeight || 930);
+  const frame = page.querySelector(".paper-cover-frame, .mag-mini-cover");
+  const sourceHeight = Math.max(420, frame?.scrollHeight || page.scrollHeight || 930);
   page.style.transform = `scale(${scale})`;
   viewport.style.height = `${Math.round(sourceHeight * scale)}px`;
 }
@@ -57,23 +66,56 @@ function periodicalHtml(period) {
   const groups = localPeriodicalGroups(period);
   if (!groups.length) return `<div class="article-empty">积累日报后，这里会自动形成${period === "month" ? "月刊" : "周刊"}词汇地图。</div>`;
   return `<div class="periodical-summary">${groups.map((group) => {
-    const sourceCount = Object.entries(group.sources).map(([name, count]) => `${name} ${count}`).join(" · ");
-    const themes = group.themes.map((theme) => `<span title="${esc(theme.words.join(", "))}">${esc(theme.name)} · ${theme.words.length}词</span>`).join("");
-    return `<section class="periodical-summary-card"><h4>${esc(group.label || group.key)} ${period === "month" ? "月刊" : "周刊"}</h4><p>${group.articleCount} 篇文章 · ${group.wordCount} 个去重目标词</p><p>题材来源：${esc(sourceCount || "原创")}</p><div class="periodical-theme-list">${themes}</div></section>`;
+    const saved = state.periodicalSelections?.[period]?.[group.key];
+    const selected = new Set(Array.isArray(saved) && saved.length ? saved : group.articles.map((article) => article.id));
+    const selectedArticles = group.articles.filter((article) => selected.has(article.id));
+    const selectedWords = new Set(selectedArticles.flatMap((article) => article.targetWords || []).map((word) => String(word).toLowerCase()));
+    const sourceCount = Object.entries(selectedArticles.reduce((map, article) => { const source = article.story?.source_type || "original"; map[source] = (map[source] || 0) + 1; return map; }, {})).map(([name, count]) => `${name} ${count}`).join(" · ");
+    const themes = selectedArticles.flatMap((article) => {
+      const group = article.sorting?.selected_group || {};
+      return [{ name: group.theme || "本期选题", words: group.words || article.targetWords || [] }];
+    }).map((theme) => `<span title="${esc(theme.words.join(", "))}">${esc(theme.name)} · ${theme.words.length}词</span>`).join("");
+    const rows = group.articles.map((article) => `<label class="periodical-article-option"><input type="checkbox" data-periodical-period="${period}" data-periodical-group="${esc(group.key)}" value="${esc(article.id)}" ${selected.has(article.id) ? "checked" : ""}><span>${esc(article.title || article.story?.title || "知乎英语日报")}</span><small>${esc(String(article.generatedAt || "").slice(0, 10))}</small></label>`).join("");
+    return `<section class="periodical-summary-card"><header class="periodical-summary-head"><div><h4>${esc(group.label || group.key)} ${period === "month" ? "月刊" : "周刊"}</h4><p>${selectedArticles.length} / ${group.articleCount} 篇文章 · ${selectedWords.size} 个去重目标词</p><p>题材来源：${esc(sourceCount || "尚未选择")}</p></div><div class="periodical-card-actions"><button class="btn-ghost periodical-read" type="button" data-periodical-read="${esc(group.key)}" data-periodical-period="${period}">阅读整刊</button><button class="btn-ghost periodical-save" type="button" data-periodical-save="${esc(group.key)}" data-periodical-period="${period}">保存选刊</button></div></header><div class="periodical-article-options">${rows}</div><div class="periodical-theme-list">${themes || "<span>选择文章后生成主题地图</span>"}</div></section>`;
   }).join("")}</div>`;
+}
+
+function bindPeriodicalList(root) {
+  root.querySelectorAll("[data-periodical-save]").forEach((button) => button.addEventListener("click", () => {
+    const period = button.dataset.periodicalPeriod;
+    const key = button.dataset.periodicalSave;
+    const ids = Array.from(root.querySelectorAll(`input[data-periodical-period="${period}"][data-periodical-group="${key}"]:checked`)).map((input) => input.value);
+    if (!ids.length) return toast("至少保留一篇文章才能组成刊物");
+    state.periodicalSelections[period][key] = ids;
+    persist();
+    renderArticleBook();
+  }));
+  /* 阅读整刊：勾选的文章（未保存过则全部）按月刊版式翻开 */
+  root.querySelectorAll("[data-periodical-read]").forEach((button) => button.addEventListener("click", () => {
+    const period = button.dataset.periodicalPeriod;
+    const key = button.dataset.periodicalRead;
+    const group = localPeriodicalGroups(period).find((item) => item.key === key);
+    if (!group) return;
+    const saved = state.periodicalSelections?.[period]?.[key];
+    const selected = new Set(Array.isArray(saved) && saved.length ? saved : group.articles.map((article) => article.id));
+    const articles = group.articles.filter((article) => selected.has(article.id));
+    if (!articles.length) return toast("这一期还没有文章");
+    openIssueArticles(articles, { period, key, label: group.label });
+  }));
 }
 
 function dailyHtml() {
   return `<div class="article-list">${state.articles.map((article) => `
     <article class="article-card">
       <div class="article-card-meta"><small>${esc(String(article.generatedAt || "").slice(0, 10))} · ${article.language === "zh" ? "中文呈现" : "英文呈现"}</small><strong>${esc(article.title || article.story?.title || "知乎英语日报")}</strong><span>${esc((article.targetWords || []).join(" · "))}</span></div>
-      <div class="article-card-actions"><button class="btn-ghost article-open" type="button" data-article-id="${esc(article.id)}">阅读</button><button class="btn-primary article-practice" type="button" data-article-id="${esc(article.id)}">练习</button></div>
+      <div class="article-card-actions"><button class="btn-ghost article-open" type="button" data-article-id="${esc(article.id)}">阅读</button><button class="btn-primary article-practice" type="button" data-article-id="${esc(article.id)}">练习</button><button class="btn-ghost article-delete" type="button" data-delete-article="${esc(article.id)}">删除</button></div>
     </article>`).join("")}</div>`;
 }
 
 function bindDailyList(root) {
   root.querySelectorAll(".article-open").forEach((button) => button.addEventListener("click", () => openNewspaper(button.dataset.articleId)));
   root.querySelectorAll(".article-practice").forEach((button) => button.addEventListener("click", () => openPracticeArticle(button.dataset.articleId)));
+  root.querySelectorAll("[data-delete-article]").forEach((button) => button.addEventListener("click", () => removeArticle(button.dataset.deleteArticle)));
 }
 
 export function renderArticleBook() {
@@ -112,10 +154,8 @@ export function renderArticleBook() {
         root.innerHTML = dailyHtml();
         bindDailyList(root);
       } else if (root === storyList) {
-        root.innerHTML = state.periodicalView === "week"
-          ? groups.map((group) => weekGroupHtml(group, group.weekKey === currentWeek.key)).join("")
-          : periodicalHtml("month");
-        if (state.periodicalView === "week") bindArticleList(root);
+        root.innerHTML = periodicalHtml(state.periodicalView);
+        bindPeriodicalList(root);
       } else {
         root.innerHTML = groups.map((group) => weekGroupHtml(group, group.weekKey === currentWeek.key)).join("");
         bindArticleList(root);

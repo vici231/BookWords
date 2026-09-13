@@ -1,4 +1,4 @@
-/* Zhihu source picker: verified 5000+ upvote answers/articles + hot/story/knowledge feeds. */
+/* Zhihu source picker: related answers/articles plus hot/story/knowledge feeds. */
 
 import { Api } from "../api.js";
 import { state } from "../state.js";
@@ -17,11 +17,12 @@ function activeSourceCards() {
     const stamp = new Date(article.lastPracticedAt || article.generatedAt || article.savedAt || "").getTime();
     (article.targetCards || []).forEach((card) => candidates.push({ card, stamp }));
   });
+  state.recentMistakes.forEach((item) => candidates.push({ card: item.card || { word: item.word }, stamp: new Date(item.wrongAt || "").getTime() }));
   const seen = new Set();
   return candidates.filter((item) => Number.isFinite(item.stamp) && item.stamp >= start.getTime())
     .sort((a, b) => b.stamp - a.stamp).map((item) => item.card).filter((card) => {
       const key = String(card.word || "").toLowerCase();
-      if (!key || seen.has(key)) return false;
+      if (!key || seen.has(key) || state.masteredWords[key]) return false;
       seen.add(key);
       return true;
     });
@@ -35,9 +36,58 @@ export function setSource(source) {
     state.sourceRecommendationKey = "";
   }
   document.querySelectorAll(".source-tab").forEach((tab) => {
-    tab.classList.toggle("is-active", tab.dataset.source === source);
+    tab.classList.toggle("is-active", tab.dataset.source === source || (source === "zhihu_search" && tab.dataset.source === "auto"));
   });
+  const originalBox = $("#original-topic-box");
+  if (originalBox) originalBox.hidden = source !== "original";
+  window.dispatchEvent(new CustomEvent("bookwords:source-change", { detail: { source } }));
   renderSourcePicker();
+}
+
+function targetWords() {
+  return (state.selectedGroup?.words || activeSourceCards().map((card) => card.word)).map((word) => String(word || "").toLowerCase()).filter(Boolean);
+}
+
+function candidateMetrics(item) {
+  const summary = String(item.summary || item.description || item.excerpt || item.content_text || "");
+  const text = `${item.title || ""} ${summary} ${(item.labels || []).join(" ")}`.toLowerCase();
+  const words = targetWords();
+  const cards = activeSourceCards();
+  const matched = words.filter((word) => {
+    if (text.includes(word)) return true;
+    const card = cards.find((value) => String(value.word || "").toLowerCase() === word);
+    const meaning = String(card?.meaning_cn || card?.meaning || card?.meaning_en || "").split(/[；;,，。]/)[0].trim().toLowerCase();
+    return meaning.length >= 2 && text.includes(meaning);
+  }).length;
+  const density = words.length ? Math.round(matched / words.length * 100) : 0;
+  const englishTerms = (summary.match(/[A-Za-z]{4,}/g) || []).length;
+  const score = summary.length / 180 + englishTerms / 12 + Number(state.diff || 3) / 10;
+  return { density, difficulty: score > 2.2 ? "进阶" : score > 1.15 ? "中等" : "简单" };
+}
+
+function sourceCard(item, index, kind, meta = "") {
+  const metrics = candidateMetrics(item);
+  const summary = item.summary || item.description || item.excerpt || item.content_text || "";
+  const labels = (item.labels || []).slice(0, 4);
+  const byline = item.author && !String(meta).includes(item.author) ? `${meta}${meta ? " · " : ""}作者 ${item.author}` : meta;
+  return `<article class="source-item" data-index="${index}"><strong>${esc(item.title || "未命名")}</strong><small>${esc(summary)}</small><div class="source-card-tags">${labels.map((label) => `<span>${esc(label)}</span>`).join("")}</div><small class="source-labels">${esc(byline)}${byline ? " · " : ""}生词密度 ${metrics.density}% · ${metrics.difficulty}</small><div class="source-card-actions">${item.url ? `<a class="btn-link" href="${esc(item.url)}" target="_blank" rel="noreferrer">预览原文</a>` : ""}<button class="btn-ghost" type="button" data-pick-source="${index}" data-source-kind="${esc(kind)}">选择为题材</button></div></article>`;
+}
+
+function bindSourceCards(picker, items, kind) {
+  picker.querySelectorAll("[data-pick-source]").forEach((button) => button.addEventListener("click", () => {
+    const item = items[Number(button.dataset.pickSource)];
+    if (!item) return;
+    state.source = kind;
+    state.sourceSelection = {
+      content_id: item.content_id || "", work_id: item.work_id || "", title: item.title || "",
+      author: item.author || "", summary: item.summary || item.description || item.excerpt || "",
+      excerpt: item.excerpt || item.description || "", description: item.description || "",
+      labels: item.labels || [], url: item.url || "", vote_up_count: item.vote_up_count || 0,
+    };
+    document.querySelectorAll(".source-tab").forEach((tab) => tab.classList.toggle("is-active", tab.dataset.source === kind || (kind === "zhihu_search" && tab.dataset.source === "auto")));
+    picker.querySelectorAll(".source-item").forEach((row) => row.classList.toggle("is-selected", row.dataset.index === button.dataset.pickSource));
+    window.dispatchEvent(new CustomEvent("bookwords:source-selected", { detail: state.sourceSelection }));
+  }));
 }
 
 function sourceQuery() {
@@ -83,7 +133,7 @@ async function renderSourcePicker() {
   picker.hidden = false;
   if (src === "auto" || src === "zhihu_search") {
     const query = sourceQuery();
-    picker.innerHTML = '<div class="source-loading">正在查找 5000+ 赞的知乎回答与文章…</div>';
+    picker.innerHTML = '<div class="source-loading">正在查找相关知乎回答与文章…</div>';
     try {
       const result = await searchOnce(query);
       if (!result.ok) throw new Error(result.error || "知乎搜索失败");
@@ -132,30 +182,14 @@ async function renderSourcePicker() {
 
 function renderSourceList(picker, items, result) {
   if (!items.length) {
-    picker.innerHTML = '<div class="source-guidance">本次搜索没有符合 5000 赞门槛的回答或文章，可调整词汇后重试，或使用原创。</div>';
+    picker.innerHTML = '<div class="source-guidance">暂未找到相关知乎内容，可调整词汇后重试，或使用其他题材。</div>';
     return;
   }
   const remaining = result.quota?.remaining;
   picker.innerHTML = `
-    <div class="source-note">仅展示 5000+ 赞内容${Number.isFinite(remaining) ? ` · 今日接口剩余 ${remaining}/10 次` : ""}</div>
-    <div class="source-items">${items.map((item, index) => `
-      <button class="source-item" type="button" data-index="${index}">
-        <strong>${esc(item.title || "未命名")}</strong>
-        <small>${esc(item.summary || "")}</small>
-        <small class="source-labels">赞同 ${esc(item.vote_up_count)}${item.author ? ` · 作者 ${esc(item.author)}` : ""}</small>
-      </button>`).join("")}</div>`;
-  picker.querySelectorAll(".source-item").forEach((button) => {
-    button.addEventListener("click", () => {
-      const item = items[Number(button.dataset.index)];
-      state.source = "zhihu_search";
-      state.sourceSelection = { content_id: item.content_id };
-      document.querySelectorAll(".source-tab").forEach((tab) => {
-        tab.classList.toggle("is-active", tab.dataset.source === "zhihu_search");
-      });
-      picker.querySelectorAll(".source-item").forEach((row) => row.classList.remove("is-selected"));
-      button.classList.add("is-selected");
-    });
-  });
+    <div class="source-note">按目标词相关度排序，赞同数仅作参考${Number.isFinite(remaining) ? ` · 今日接口剩余 ${remaining}/10 次` : ""}</div>
+    <div class="source-items">${items.map((item, index) => sourceCard(item, index, "zhihu_search", `赞同 ${item.vote_up_count || 0}${item.author ? ` · ${item.author}` : ""}`)).join("")}</div>`;
+  bindSourceCards(picker, items, "zhihu_search");
 }
 
 function renderHotList(picker, items, result) {
@@ -166,28 +200,8 @@ function renderHotList(picker, items, result) {
   const remaining = result.quota?.remaining;
   picker.innerHTML = `
     <div class="source-note">知乎热榜${Number.isFinite(remaining) ? ` · 今日接口剩余 ${remaining}/10 次` : ""}</div>
-    <div class="source-items">${items.map((item, index) => `
-      <button class="source-item" type="button" data-index="${index}">
-        <strong>${esc(item.title || "未命名")}</strong>
-        <small>${esc(item.description || item.excerpt || item.content_text || "")}</small>
-        <small class="source-labels">热榜 ${esc(item.hot_score !== undefined ? "热度 " + item.hot_score : "")}</small>
-      </button>`).join("")}</div>`;
-  picker.querySelectorAll(".source-item").forEach((button) => {
-    button.addEventListener("click", () => {
-      const item = items[Number(button.dataset.index)];
-      state.source = "hot";
-      state.sourceSelection = {
-        content_id: item.content_id || "",
-        title: item.title,
-        excerpt: item.excerpt || item.description || "",
-        summary: item.summary || item.excerpt || item.description || "",
-        url: item.url || "",
-        labels: item.labels || [],
-      };
-      picker.querySelectorAll(".source-item").forEach((row) => row.classList.remove("is-selected"));
-      button.classList.add("is-selected");
-    });
-  });
+    <div class="source-items">${items.map((item, index) => sourceCard(item, index, "hot", item.hot_score !== undefined ? `热度 ${item.hot_score}` : "知乎热榜")).join("")}</div>`;
+  bindSourceCards(picker, items, "hot");
 }
 
 function renderContentList(picker, items, kind) {
@@ -198,27 +212,8 @@ function renderContentList(picker, items, kind) {
   const label = kind === "story" ? "故事" : "知识";
   picker.innerHTML = `
     <div class="source-note">知乎${label}</div>
-    <div class="source-items">${items.map((item, index) => `
-      <button class="source-item" type="button" data-index="${index}">
-        <strong>${esc(item.title || "未命名")}</strong>
-        <small>${esc(item.description || "")}</small>
-        <small class="source-labels">${item.labels?.length ? item.labels.join(" · ") : ""}</small>
-      </button>`).join("")}</div>`;
-  picker.querySelectorAll(".source-item").forEach((button) => {
-    button.addEventListener("click", () => {
-      const item = items[Number(button.dataset.index)];
-      state.source = kind;
-       state.sourceSelection = {
-         work_id: item.work_id,
-         title: item.title,
-         description: item.description,
-         summary: item.description,
-         labels: item.labels || [],
-       };
-      picker.querySelectorAll(".source-item").forEach((row) => row.classList.remove("is-selected"));
-      button.classList.add("is-selected");
-    });
-  });
+    <div class="source-items">${items.map((item, index) => sourceCard(item, index, kind, `知乎${label}`)).join("")}</div>`;
+  bindSourceCards(picker, items, kind);
 }
 
 export function refreshSourcePicker() {

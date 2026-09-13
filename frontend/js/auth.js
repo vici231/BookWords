@@ -8,7 +8,7 @@ import { $, toast } from "./utils.js";
 
 export function setAuthMode(registering) {
   $("#auth-title").textContent = registering ? "创建本地账户" : "登录刊见单词";
-  $("#auth-intro").textContent = registering ? "创建后，当前浏览器中的学习数据会迁移到本机加密 JSON 文件。" : "登录后读取本机账户的加密资料、词汇池、日报与练习记录。";
+  $("#auth-intro").textContent = registering ? "创建后，当前浏览器中的学习数据会迁移到本机加密 JSON 文件。" : "登录后读取本机账户的加密资料、文章生成词组、日报与练习记录。";
   $("#btn-auth-submit").textContent = registering ? "创建并登录" : "登录";
   $("#btn-auth-switch").textContent = registering ? "已有账户，去登录" : "创建本地账户";
   $("#auth-confirm-wrap").hidden = !registering;

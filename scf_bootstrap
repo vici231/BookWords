@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+export PORT=9000
+export HOST=0.0.0.0
+export HOSTNAME=0.0.0.0
+export NITRO_HOST=0.0.0.0
+export NITRO_PORT=9000
+exec npm run start

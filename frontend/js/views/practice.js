@@ -1,210 +1,127 @@
-/* views/practice.js — 故事选词填空练习 + 练习后解锁的原文（含中文注释）
-   修复：往期刊物的中文注释改用该期自带的 targetCards，而非当前词汇池。 */
+/* Four-mode practice engine plus recent-mistake reinforcement. */
 
-import { state } from "../state.js";
+import { emit, state } from "../state.js";
 import { markArticleCompleted } from "../articles.js";
-import { $, esc, formatBold, formatStamp } from "../utils.js";
+import { persist } from "../store.js";
+import { $, esc } from "../utils.js";
 import { showView } from "../router.js";
 
+const MODES = [["target", "目标词填空"], ["choice", "选词填空"], ["spelling", "拼写"], ["sentence", "句子排序"]];
+
+const activeArticle = () => state.articles.find((item) => item.id === state.lastArticleId) || null;
+const escapeRe = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function targetCards() {
+  const article = activeArticle();
+  if (article?.targetCards?.length) return article.targetCards;
+  const words = Array.from(String(state.lastStory?.en || "").matchAll(/\*\*([^*]+)\*\*/g), (match) => match[1]);
+  return words.map((word) => state.pool.find((card) => String(card.word).toLowerCase() === word.toLowerCase()) || { word });
+}
+
+function contextFor(word) {
+  const plain = String(state.lastStory?.en || "").replace(/\*\*/g, "");
+  return plain.split(/(?<=[.!?])\s+/).find((sentence) => new RegExp(`\\b${escapeRe(word)}\\b`, "i").test(sentence)) || plain.slice(0, 180);
+}
+
 function practiceInput(word, index) {
-  const serial = String(index).padStart(2, "0");
-  return `<span class="practice-blank"><span class="practice-blank-index" aria-hidden="true">${serial}</span><input class="practice-input" type="text" autocomplete="off" spellcheck="false" data-answer="${esc(word)}" data-index="${index}" aria-label="填写第 ${index} 个单词"></span>`;
+  return `<span class="practice-blank"><span class="practice-blank-index">${String(index).padStart(2, "0")}</span><input class="practice-input" type="text" autocomplete="off" data-answer="${esc(word)}"></span>`;
 }
 
-function updatePracticeProgress() {
-  const inputs = [...document.querySelectorAll("#practice-story .practice-input")];
-  const filled = inputs.filter((input) => input.value.trim()).length;
-  const correct = inputs.filter((input) => String(input.dataset.answer || "").trim().toLowerCase() === input.value.trim().toLowerCase()).length;
-  const total = inputs.length;
-  const label = $("#practice-progress-label");
-  const fill = $("#practice-progress-fill");
-  if (label) label.textContent = `${filled} / ${total}`;
-  if (fill) fill.style.width = `${total ? (filled / total) * 100 : 0}%`;
-  return { inputs, total, filled, correct };
+function targetExercise() {
+  let index = 0;
+  return `<div class="inline-exercise-text">${esc(state.lastStory.en).replace(/\*\*([^*]+)\*\*/g, (_, word) => practiceInput(word.trim(), ++index)).replace(/\n/g, "<br>")}</div>`;
 }
 
-function setPracticeFeedback(kind, title, copy) {
-  const feedback = $("#practice-feedback");
-  if (!feedback) return;
-  feedback.className = `practice-feedback is-${kind}`;
-  feedback.innerHTML = `<span class="practice-feedback-icon" aria-hidden="true">${kind === "success" ? "✓" : kind === "warning" ? "!" : "•"}</span><span><strong>${esc(title)}</strong><small>${esc(copy)}</small></span>`;
-  feedback.hidden = false;
+function choiceExercise() {
+  const options = targetCards().map((card) => card.word).filter(Boolean);
+  const body = esc(state.lastStory.en).replace(/\*\*([^*]+)\*\*/g, (_, word) => `<select class="practice-choice" data-answer="${esc(word.trim())}"><option value="">选择</option>${options.map((value) => `<option value="${esc(value)}">${esc(value)}</option>`).join("")}</select>`);
+  return `<div class="inline-exercise-text">${body.replace(/\n/g, "<br>")}</div>`;
 }
 
-function clearPracticeFeedback() {
-  const feedback = $("#practice-feedback");
-  if (!feedback) return;
-  feedback.hidden = true;
-  feedback.textContent = "";
-  feedback.className = "practice-feedback";
+function spellingExercise() {
+  return `<div class="spelling-grid">${targetCards().map((card) => `<label class="spelling-card"><span>${esc(card.meaning_cn || card.meaning || card.meaning_en || "根据语境拼写")}</span><small>${esc(contextFor(card.word).replace(new RegExp(`\\b${escapeRe(card.word)}\\b`, "ig"), "____"))}</small><input type="text" data-answer="${esc(card.word)}" autocomplete="off" spellcheck="false"></label>`).join("")}</div>`;
 }
 
-/* ---------------- 中文注释（gloss） ---------------- */
+function sentenceExercise() {
+  const sentences = String(state.lastStory.en || "").replace(/\*\*/g, "").split(/(?<=[.!?])\s+/).filter((sentence) => targetCards().some((card) => new RegExp(`\\b${escapeRe(card.word)}\\b`, "i").test(sentence))).slice(0, 5);
+  const shuffled = sentences.map((sentence, index) => ({ sentence, index })).sort((a, b) => ((a.index * 7 + 3) % 11) - ((b.index * 7 + 3) % 11));
+  return `<div class="sentence-sort">${shuffled.map((item) => `<div class="sentence-sort-row" data-answer-index="${item.index}"><span>${esc(item.sentence)}</span><button type="button" data-move="up">↑</button><button type="button" data-move="down">↓</button></div>`).join("")}</div>`;
+}
 
-/* storyGlosses(story, article)：优先该期刊物自带的 targetCards（往期练习注释对得上当期词），
-   没有时退回当前词汇池；最后用 hooks 兜底。 */
-function storyGlosses(story, article = null) {
-  const chinese = new Map();
-  const hookGlosses = [];
-  const add = (map, word, gloss) => {
-    const key = String(word || "").trim().toLowerCase();
-    /* 中文辅助阅读只保留当前语境的一个义项，避免把词库的整串释义带进文章。 */
-    const value = String(gloss || "").split(/[；;，,、/|]/)[0].split(/[（(]/)[0].trim();
-    if (key && value && !map.has(key)) map.set(key, value);
-  };
+const renderModeBody = () => state.practiceMode === "choice" ? choiceExercise() : state.practiceMode === "spelling" ? spellingExercise() : state.practiceMode === "sentence" ? sentenceExercise() : targetExercise();
 
-  /* hooks 只作为缺少词卡中文释义时的兜底，不再注入英文原文。 */
-  (story?.hooks || []).forEach((hook) => {
-    const match = String(hook).match(/^\s*\**([^*:]+?)\**\s*[:：]\s*(.+?)\s*$/);
-    if (!match) return;
-    hookGlosses.push(match);
-  });
+export function renderInlinePractice() {
+  const root = $("#inline-practice");
+  if (!root || !state.lastStory?.en) return;
+  const result = state.practiceResults[state.lastArticleId]?.[state.practiceMode];
+  root.innerHTML = `<div class="practice-mode-tabs">${MODES.map(([id, label]) => `<button class="${state.practiceMode === id ? "is-active" : ""}" type="button" data-practice-mode="${id}">${label}</button>`).join("")}</div><div class="inline-practice-head"><strong>${MODES.find(([id]) => id === state.practiceMode)?.[1]}</strong><span>${result ? `上次 ${result.score}/${result.total}` : "完成后记录错词"}</span></div><div id="inline-practice-body">${renderModeBody()}</div><div id="inline-practice-feedback" class="practice-feedback" hidden></div><div class="practice-actions"><button id="btn-check-inline-practice" class="btn-primary" type="button">提交并检查</button><button id="btn-reset-inline-practice" class="btn-ghost" type="button">重新练习</button></div>`;
+  root.querySelectorAll("[data-practice-mode]").forEach((button) => button.addEventListener("click", () => { state.practiceMode = button.dataset.practiceMode; renderInlinePractice(); }));
+  root.querySelectorAll("[data-move]").forEach((button) => button.addEventListener("click", () => {
+    const row = button.closest(".sentence-sort-row"); const sibling = button.dataset.move === "up" ? row.previousElementSibling : row.nextElementSibling;
+    if (!sibling) return;
+    if (button.dataset.move === "up") row.parentElement.insertBefore(row, sibling); else row.parentElement.insertBefore(sibling, row);
+  }));
+  $("#btn-check-inline-practice")?.addEventListener("click", checkInlinePractice);
+  $("#btn-reset-inline-practice")?.addEventListener("click", renderInlinePractice);
+}
 
-  const targetCards = Array.isArray(article?.targetCards) && article.targetCards.length
-    ? article.targetCards
-    : state.pool;
-  [...targetCards, ...state.wordbook].forEach((card) => {
-    add(chinese, card.word, card.meaning_cn || card.meaning || card.meaning_en);
-  });
-  /* 没有中文卡片释义时，才用 hooks 的内容兜底，并同样只取一个义项。 */
-  hookGlosses.forEach((match) => add(chinese, match[1], match[2]));
-  return { chinese };
+function recordMistakes(words) {
+  const now = new Date().toISOString(); const cards = targetCards(); const keys = new Set(words.map((word) => String(word).toLowerCase()));
+  state.recentMistakes = state.recentMistakes.filter((item) => !keys.has(String(item.word).toLowerCase()));
+  words.forEach((word) => { const key = String(word).toLowerCase(); delete state.masteredWords[key]; state.recentMistakes.unshift({ word, card: cards.find((card) => String(card.word).toLowerCase() === key) || { word }, wrongAt: now, articleId: state.lastArticleId, practiceMode: state.practiceMode }); });
+  const cutoffDate = new Date(); cutoffDate.setHours(0, 0, 0, 0); cutoffDate.setDate(cutoffDate.getDate() - 2);
+  const cutoff = cutoffDate.getTime();
+  state.recentMistakes = state.recentMistakes.filter((item) => new Date(item.wrongAt).getTime() >= cutoff);
+}
+
+function checkInlinePractice() {
+  const root = $("#inline-practice-body");
+  let results;
+  if (state.practiceMode === "sentence") {
+    results = [...root.querySelectorAll(".sentence-sort-row")].map((row, index) => ({ input: row, answers: targetCards().filter((card) => row.textContent.toLowerCase().includes(String(card.word).toLowerCase())).map((card) => card.word), correct: Number(row.dataset.answerIndex) === index }));
+  } else {
+    results = [...root.querySelectorAll("input[data-answer], select[data-answer]")].map((input) => ({ input, answers: [input.dataset.answer], correct: input.value.trim().toLowerCase() === input.dataset.answer.trim().toLowerCase() }));
+  }
+  if (!results.length) return;
+  results.forEach((item) => item.input.classList.toggle("is-wrong", !item.correct));
+  const wrongWords = Array.from(new Set(results.filter((item) => !item.correct).flatMap((item) => item.answers).filter(Boolean)));
+  const score = results.filter((item) => item.correct).length;
+  state.practiceResults[state.lastArticleId] ||= {};
+  state.practiceResults[state.lastArticleId][state.practiceMode] = { score, total: results.length, wrongWords, completedAt: new Date().toISOString() };
+  recordMistakes(wrongWords);
+  if (wrongWords.length) { const article = activeArticle(); if (article) article.completedAt = ""; }
+  const allPerfect = MODES.every(([mode]) => { const value = state.practiceResults[state.lastArticleId]?.[mode]; return value && value.total > 0 && value.score === value.total; });
+  state.practiceCompleted = allPerfect;
+  if (allPerfect) markArticleCompleted();
+  persist(); emit("articles");
+  const feedback = $("#inline-practice-feedback"); feedback.hidden = false; feedback.className = `practice-feedback is-${wrongWords.length ? "warning" : "success"}`;
+  feedback.innerHTML = `<span class="practice-feedback-icon">${wrongWords.length ? "!" : "✓"}</span><span><strong>得分 ${score} / ${results.length}</strong><small>${wrongWords.length ? `错词已回流近三日：${esc(wrongWords.join("、"))}` : allPerfect ? "四种练习全部满分，本期已完成。" : "本模式满分，继续完成其他练习。"}</small></span>`;
 }
 
 export function withStoryGlosses(text, story, article = null) {
-  const glosses = storyGlosses(story, article).chinese;
+  const cards = article?.targetCards?.length ? article.targetCards : [...state.pool, ...state.wordbook];
+  const meanings = new Map(cards.map((card) => [String(card.word).toLowerCase(), String(card.meaning_cn || card.meaning || card.meaning_en || "").split(/[；;，,、/|]/)[0]]));
   const used = new Set();
-  return String(text || "").replace(/\*\*([^*]+)\*\*/g, (full, rawWord) => {
-    const word = rawWord.trim();
-    const key = word.toLowerCase();
-    const gloss = glosses.get(key);
-    if (!gloss || used.has(key)) return full;
-    used.add(key);
-    return `**${rawWord}**（${gloss}）`;
-  });
-}
-
-/* ---------------- 渲染与判分 ---------------- */
-
-function renderPracticeSource() {
-  const source = $("#practice-source");
-  if (!source) return;
-  source.hidden = !state.practiceCompleted || !state.lastStory;
-  if (source.hidden || !state.lastStory) return;
-  const article = state.articles.find((item) => item.id === state.lastArticleId) || null;
-  $("#practice-source-en").innerHTML = formatBold(state.lastStory.en || "");
-  $("#practice-source-cn").innerHTML = state.lastStory.zh
-    ? formatBold(state.lastStory.zh)
-    : formatBold(withStoryGlosses(state.lastStory.cn, state.lastStory, article));
-  const stamp = article?.completedAt ? formatStamp(article.completedAt, "完成于 ") : null;
-  const timeEl = $("#practice-completed-at");
-  if (timeEl) timeEl.textContent = stamp || "";
+  return String(text || "").replace(/\*\*([^*]+)\*\*/g, (full, raw) => { const key = raw.trim().toLowerCase(); if (!meanings.get(key) || used.has(key)) return full; used.add(key); return `**${raw}**（${meanings.get(key)}）`; });
 }
 
 export function renderPractice() {
-  const empty = $("#practice-empty");
-  const card = $("#practice-card");
-  const storyBox = $("#practice-story");
-  if (!empty || !card || !storyBox) return;
-  if (!state.lastStory || !state.lastStory.en) {
-    empty.hidden = false;
-    card.hidden = true;
-    renderPracticeSource();
-    return;
-  }
-  empty.hidden = true;
-  card.hidden = false;
-  let found = 0;
-  const makeBlank = (word) => {
-    found += 1;
-    return practiceInput(word.trim(), found);
-  };
-  let html = esc(state.lastStory.en).replace(/\*\*([^*]+)\*\*/g, (_, word) => {
-    return makeBlank(word);
-  });
-  if (!found) {
-    html = esc(state.lastStory.en);
-    state.pool.slice(0, 6).forEach((word) => {
-      const re = new RegExp(`\\b${String(word.word).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
-      if (re.test(html)) {
-        html = html.replace(re, makeBlank(word.word));
-      }
-    });
-  }
-  storyBox.innerHTML = `<h3>${esc(state.lastStory.title || "记忆故事")}</h3><p>${html.replace(/\n/g, "<br>")}</p>`;
-  $("#practice-score").textContent = `${found} 个空 · 全对后解锁原文`;
-  clearPracticeFeedback();
-  const inputs = [...storyBox.querySelectorAll(".practice-input")];
-  inputs.forEach((input, index) => {
-    input.addEventListener("input", () => {
-      input.classList.remove("is-correct", "is-wrong");
-      input.removeAttribute("aria-invalid");
-      if (!state.practiceCompleted) clearPracticeFeedback();
-      updatePracticeProgress();
-    });
-    input.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter") return;
-      event.preventDefault();
-      const next = inputs[index + 1];
-      if (next) next.focus();
-      else checkPractice();
-    });
-  });
-  updatePracticeProgress();
-  renderPracticeSource();
-  storyBox.querySelector(".practice-input")?.focus();
+  const empty = $("#practice-empty"); const card = $("#practice-card"); const story = $("#practice-story");
+  if (!empty || !card || !story) return;
+  empty.hidden = Boolean(state.lastStory?.en); card.hidden = !state.lastStory?.en;
+  if (!state.lastStory?.en) return;
+  let index = 0;
+  story.innerHTML = `<h3>${esc(state.lastStory.title || "记忆故事")}</h3><p>${esc(state.lastStory.en).replace(/\*\*([^*]+)\*\*/g, (_, word) => practiceInput(word, ++index)).replace(/\n/g, "<br>")}</p>`;
+  $("#practice-score").textContent = `${index} 个空 · 完整练习请使用文章上方“练习”标签`;
 }
 
-function checkPractice() {
-  const { inputs, total, filled } = updatePracticeProgress();
-  if (!inputs.length) return;
-  if (!filled) {
-    state.practiceCompleted = false;
-    setPracticeFeedback("info", "先试着填一填", "填写任意一个空后再提交，按 Enter 可以跳到下一题。");
-    return;
-  }
-  let correct = 0;
-  let incorrect = 0;
-  inputs.forEach((input) => {
-    const answer = String(input.dataset.answer || "").trim().toLowerCase();
-    const value = input.value.trim().toLowerCase();
-    const isCorrect = value === answer;
-    input.classList.toggle("is-correct", isCorrect);
-    input.classList.toggle("is-wrong", !isCorrect);
-    input.setAttribute("aria-invalid", isCorrect ? "false" : "true");
-    if (isCorrect) correct += 1;
-    else incorrect += 1;
-  });
-  state.practiceCompleted = correct === total;
-  if (state.practiceCompleted) {
-    markArticleCompleted();
-    $("#practice-score").textContent = `答对 ${correct} / ${total} · 源文本已解锁`;
-    setPracticeFeedback("success", "全部正确，做得很好", "已解锁英文源文本和中文辅助记忆。");
-  } else {
-    $("#practice-score").textContent = `答对 ${correct} / ${total} · 再订正 ${incorrect} 个`;
-    setPracticeFeedback("warning", `还有 ${incorrect} 个词需要订正`, "红色输入框需要再想一想；修改后可以再次提交。");
-  }
-  renderPracticeSource();
-}
-
-/* 从存档墙点「去练习」：把练习目标切到往期刊物 */
 export function openPracticeArticle(id) {
-  const article = state.articles.find((item) => item.id === id);
-  if (!article) return;
-  state.lastArticleId = article.id;
-  state.lastStory = article.story;
-  state.practiceCompleted = false;
-  showView("story-pool-view");
-  requestAnimationFrame(() => {
-    renderPractice();
-    $("#practice-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
+  const article = state.articles.find((item) => item.id === id); if (!article) return;
+  state.lastArticleId = article.id; state.lastStory = article.story; state.practiceCompleted = false; state.workflowStage = "result"; state.resultMode = "practice";
+  showView("story-pool-view"); requestAnimationFrame(() => { renderPractice(); $("#practice-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" }); });
 }
 
 export function bindPracticeEvents() {
-  $("#btn-check-practice").addEventListener("click", checkPractice);
-  $("#btn-reset-practice").addEventListener("click", () => {
-    state.practiceCompleted = false;
-    renderPractice();
-  });
+  $("#btn-check-practice")?.addEventListener("click", () => { document.querySelectorAll("#practice-story input[data-answer]").forEach((input) => input.classList.toggle("is-wrong", input.value.trim().toLowerCase() !== input.dataset.answer.trim().toLowerCase())); });
+  $("#btn-reset-practice")?.addEventListener("click", renderPractice);
 }

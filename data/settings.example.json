@@ -1,0 +1,12 @@
+{
+  "_说明": "这是可选的启动种子配置模板。默认不需要它：请在网页的「系统设置 → 接口凭证」里填写，凭证只存在你自己浏览器的 localStorage，随请求临时发给后端，不落盘。只有想让服务端在无人访问时也持有默认凭证（例如本地脚本调试），才把本文件复制成 settings.json 并填写。",
+  "api": {
+    "base_url": "https://api.deepseek.com",
+    "api_key": "",
+    "model": ""
+  },
+  "zhihu": {
+    "access_secret": ""
+  },
+  "theme": "paper"
+}

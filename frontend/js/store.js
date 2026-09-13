@@ -17,6 +17,8 @@ const KEYS = {
   profile: "wj-profile",
   token: "wj-auth-token",
   settingsAt: "wj-settings-updated-at",
+  learning: "wj-learning-state",
+  credentials: "wj-credentials",
 };
 
 /* 旧版（vocab-memory-poker）的 localStorage 键；只读迁移，不删除 */
@@ -41,17 +43,21 @@ function writeJson(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* 存储满等本地异常忽略 */ }
 }
 
-/* 首次启动：wj-* 缺失而旧版 ciyu-* 存在时，把旧数据复制过来 */
+/* 首次启动：wj-* 缺失而旧版 ciyu-* 存在时，把旧数据复制过来。
+   AI Works 预览等 sandbox iframe（opaque origin）中 localStorage 直接抛
+   SecurityError——这里整体保护，绝不让迁移中断应用初始化。 */
 export function migrateLegacyStorage() {
-  if (localStorage.getItem(KEYS.wordbook) !== null) return;
-  for (const [key, legacy] of Object.entries(LEGACY)) {
-    if (localStorage.getItem(key) === null) {
-      const raw = localStorage.getItem(legacy);
-      if (raw !== null) {
-        try { localStorage.setItem(key, JSON.parse(raw) ?? null); } catch (e) { /* 忽略损坏数据 */ }
+  try {
+    if (localStorage.getItem(KEYS.wordbook) !== null) return;
+    for (const [key, legacy] of Object.entries(LEGACY)) {
+      if (localStorage.getItem(key) === null) {
+        const raw = localStorage.getItem(legacy);
+        if (raw !== null) {
+          try { localStorage.setItem(key, JSON.parse(raw) ?? null); } catch (e) { /* 忽略损坏数据 */ }
+        }
       }
     }
-  }
+  } catch (e) { /* 存储不可用：内存态运行，刷新后数据不保留 */ }
 }
 
 /* ---------------- 快照（与服务端 users.json 加密格式兼容） ---------------- */
@@ -63,6 +69,10 @@ export function userDataSnapshot() {
     pool: state.pool,
     articles: state.articles,
     dailyRecords: state.dailyRecords,
+    masteredWords: state.masteredWords,
+    recentMistakes: state.recentMistakes,
+    practiceResults: state.practiceResults,
+    periodicalSelections: state.periodicalSelections,
   };
 }
 
@@ -95,8 +105,10 @@ export function persist() {
   writeJson(KEYS.wordbook, state.wordbook);
   writeJson(KEYS.pool, state.pool);
   writeJson(KEYS.articles, state.articles);
+  writeJson("wj-periodical-selections", state.periodicalSelections);
   writeJson(KEYS.daily, state.dailyRecords);
   writeJson(KEYS.profile, state.profile);
+  writeJson(KEYS.learning, { masteredWords: state.masteredWords, recentMistakes: state.recentMistakes, practiceResults: state.practiceResults });
   if (state.auth.token) scheduleSync();
 }
 
@@ -105,8 +117,10 @@ function writeLocalOnly() {
   writeJson(KEYS.wordbook, state.wordbook);
   writeJson(KEYS.pool, state.pool);
   writeJson(KEYS.articles, state.articles);
+  writeJson("wj-periodical-selections", state.periodicalSelections);
   writeJson(KEYS.daily, state.dailyRecords);
   writeJson(KEYS.profile, state.profile);
+  writeJson(KEYS.learning, { masteredWords: state.masteredWords, recentMistakes: state.recentMistakes, practiceResults: state.practiceResults });
 }
 
 export function persistSettingsStamp() {
@@ -135,11 +149,53 @@ export function registerArticleMigrator(fn) {
 export function loadLocal() {
   state.wordbook = readJson(KEYS.wordbook, []).filter((w) => w && w.word).map((w) => normalizeWordEntry({ ...w, savedAt: w.savedAt || nowIso() }));
   state.pool = readJson(KEYS.pool, []).filter((w) => w && w.word).slice(0, MAX_STORY_CARDS).map((w) => ({ ...w, addedAt: w.addedAt || nowIso() }));
+  state.targetSelection = new Set(state.pool.map((word) => String(word.word || "").toLowerCase()));
   state.poolUpdatedAt = state.pool.reduce((latest, word) => (word.addedAt > latest ? word.addedAt : latest), "");
   state.articles = readJson(KEYS.articles, []).filter((article) => article && article.story && article.story.en);
+  const periodicalSelections = readJson("wj-periodical-selections", { week: {}, month: {} });
+  state.periodicalSelections = periodicalSelections && typeof periodicalSelections === "object"
+    ? { week: periodicalSelections.week || {}, month: periodicalSelections.month || {} }
+    : { week: {}, month: {} };
   state.dailyRecords = readJson(KEYS.daily, []).filter((item) => item && item.date && item.checkedAt);
   state.profile = { ...state.profile, ...readJson(KEYS.profile, {}) };
+  const learning = readJson(KEYS.learning, {});
+  state.masteredWords = learning.masteredWords && typeof learning.masteredWords === "object" ? learning.masteredWords : {};
+  state.recentMistakes = Array.isArray(learning.recentMistakes) ? learning.recentMistakes : [];
+  state.practiceResults = learning.practiceResults && typeof learning.practiceResults === "object" ? learning.practiceResults : {};
+  loadCredentials();
   migrateArticlesFn?.();
+}
+
+/* ---------------- 本机凭证（只存本地，绝不进仓库/部署包） ---------------- */
+
+export function loadCredentials() {
+  const saved = readJson(KEYS.credentials, null);
+  if (!saved || typeof saved !== "object") return state.credentials;
+  state.credentials = {
+    base_url: String(saved.base_url || ""),
+    api_key: String(saved.api_key || ""),
+    model: String(saved.model || ""),
+    access_secret: String(saved.access_secret || ""),
+  };
+  return state.credentials;
+}
+
+export function saveCredentials(next) {
+  const current = state.credentials || {};
+  const merged = {
+    base_url: String(next && next.base_url !== undefined ? next.base_url : current.base_url || "").trim(),
+    api_key: String(next && next.api_key !== undefined ? next.api_key : current.api_key || "").trim(),
+    model: String(next && next.model !== undefined ? next.model : current.model || "").trim(),
+    access_secret: String(next && next.access_secret !== undefined ? next.access_secret : current.access_secret || "").trim(),
+  };
+  state.credentials = merged;
+  writeJson(KEYS.credentials, merged);
+  return merged;
+}
+
+export function hasCredentials() {
+  const cred = state.credentials || {};
+  return Boolean(cred.api_key || cred.access_secret);
 }
 
 /* ---------------- 会话数据 ---------------- */
@@ -161,33 +217,18 @@ export function applyUserData(data) {
   const source = data && typeof data === "object" ? data : {};
   state.wordbook = Array.isArray(source.wordbook) ? source.wordbook.filter((w) => w && w.word).map((w) => normalizeWordEntry({ ...w, savedAt: w.savedAt || nowIso() })) : [];
   state.pool = Array.isArray(source.pool) ? source.pool.filter((w) => w && w.word).slice(0, MAX_STORY_CARDS).map((w) => ({ ...w, addedAt: w.addedAt || nowIso() })) : [];
+  state.targetSelection = new Set(state.pool.map((word) => String(word.word || "").toLowerCase()));
   state.poolUpdatedAt = state.pool.reduce((latest, word) => (word.addedAt > latest ? word.addedAt : latest), "");
   state.articles = Array.isArray(source.articles) ? source.articles.filter((article) => article && article.story && article.story.en) : [];
+  state.periodicalSelections = source.periodicalSelections && typeof source.periodicalSelections === "object"
+    ? { week: source.periodicalSelections.week || {}, month: source.periodicalSelections.month || {} }
+    : { week: {}, month: {} };
   state.dailyRecords = Array.isArray(source.dailyRecords) ? source.dailyRecords.filter((item) => item && item.date && item.checkedAt) : [];
   state.profile = { ...state.profile, ...(source.profile && typeof source.profile === "object" ? source.profile : {}) };
+  state.masteredWords = source.masteredWords && typeof source.masteredWords === "object" ? source.masteredWords : {};
+  state.recentMistakes = Array.isArray(source.recentMistakes) ? source.recentMistakes : [];
+  state.practiceResults = source.practiceResults && typeof source.practiceResults === "object" ? source.practiceResults : {};
   migrateArticlesFn?.();
-  writeLocalOnly();
-}
-
-/* 清空本地学习数据（系统设置「清除已保存数据」用；服务端账户数据不动） */
-export function clearLocalUserData() {
-  state.wordbook = [];
-  state.pool = [];
-  state.poolUpdatedAt = "";
-  state.articles = [];
-  state.dailyRecords = [];
-  state.lastStory = null;
-  state.lastArticleId = "";
-  state.practiceCompleted = false;
-  state.profile = { name: "刊见学习者", goal: "每天记住 10 个词", signature: "", avatar: "学", updatedAt: "" };
-  state.source = "auto";
-  state.sourceSelection = null;
-  state.sourceRecommendations = [];
-  state.sourceRecommendationKey = "";
-  state.zhihuSearchCache = new Map();
-  state.zhihuHotCache = null;
-  state.zhihuStoriesCache = null;
-  state.zhihuKnowledgeCache = null;
   writeLocalOnly();
 }
 

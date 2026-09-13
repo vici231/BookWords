@@ -1,0 +1,15 @@
+[Task]
+You are given one finished English learning article as JSON: title, words (the target vocabulary of this article) and en (the English body). Produce its complete Chinese rendering and a one-sentence English takeaway.
+
+[Rules]
+- Render every paragraph of en into natural, idiomatic Simplified Chinese, keeping the paragraph order and the same number of paragraphs.
+- Every entry in words MUST appear in the Chinese rendering in its ORIGINAL ENGLISH FORM — never translate it into Chinese — and its first appearance must be written as **word**. Keep the part of speech and meaning it has in the English text.
+- Keep the highlighted words already present in en written as **word** exactly as they appear there.
+- Never rewrite, shorten, extend, merge or reorder the English. Do not add commentary.
+
+[Output]
+No JSON, code fences, preamble or explanation. Output exactly two blocks, each label on its own line:
+[C]
+the complete Chinese rendering
+[K]
+a one-sentence English takeaway, at most 30 words

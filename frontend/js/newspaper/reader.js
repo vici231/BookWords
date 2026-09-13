@@ -7,6 +7,7 @@ import { $ } from "../utils.js";
 import { activeArticle, articlesOfWeek } from "../articles.js";
 import { newspaperPages, issuePages } from "./markup.js";
 import { paginateFrontPages } from "./pagination.js";
+import { issueMagazinePages, paginateMagazine } from "./magazine.js";
 
 let paperIndex = 0;
 let paperTurning = false;
@@ -103,14 +104,22 @@ export function openNewspaper(id) {
   renderPaper([article], { type: "article", id: article.id });
 }
 
-/* 打开一周整刊：本周所有文章整合一期（封面含目录 + 每篇头版）。不动练习目标。 */
+/* 打开一周整刊：本周所有文章整合一期（月刊版式）。不动练习目标。 */
 export function openIssue(weekKey) {
   const articles = articlesOfWeek(weekKey);
   if (!articles.length) return;
-  renderPaper(articles, { type: "issue", weekKey });
+  renderPaper(articles, { type: "issue", weekKey, period: "week" });
 }
 
-/* 渲染翻书阅读器；open 用于 resize / 字体就绪后按同一刊物重开。 */
+/* 打开自选整刊（周刊/月刊汇总卡的「阅读整刊」）：指定文章集合直接成刊 */
+export function openIssueArticles(articles, meta = {}) {
+  const list = (articles || []).filter(Boolean);
+  if (!list.length) return;
+  renderPaper(list, { type: "issue", ids: list.map((a) => a.id), period: meta.period || "week", key: meta.key || "", label: meta.label || "" });
+}
+
+/* 渲染翻书阅读器；open 用于 resize / 字体就绪后按同一刊物重开。
+   整刊（周刊/月刊）走蓝白杂志版式；单篇保留原报刊版式。 */
 function renderPaper(articles, open) {
   const viewport = $("#newspaper-body");
   if (!viewport) return;
@@ -118,11 +127,13 @@ function renderPaper(articles, open) {
   $("#newspaper-modal").hidden = false;
   paperIndex = 0;
   paperTurning = false;
-  /* 每次分页都从原始文章页开始。paginateFrontPages 会用拆分后的页面替换原节点，
+  /* 每次分页都从原始文章页开始。分页模块会用拆分后的页面替换原节点，
      因此不能在已分页 DOM 上重复执行，否则第二次只能看见第一页的那部分正文。 */
-  viewport.innerHTML = issuePages(articles).join("");
+  const isIssue = open.type === "issue";
+  viewport.innerHTML = (isIssue ? issueMagazinePages(articles, open) : issuePages(articles)).join("");
   sizeBook();
-  paginateFrontPages(articles);
+  if (isIssue) paginateMagazine(articles, open);
+  else paginateFrontPages(articles);
   resetPaperPages();
   applyPaperIndicator();
   document.querySelectorAll("#newspaper-body .paper-gloss").forEach((glass) => (glass.hidden = true));
@@ -130,14 +141,18 @@ function renderPaper(articles, open) {
     const btn = document.querySelector(`#btn-gloss-${key}`);
     if (btn) btn.classList.remove("is-active");
   });
+  /* 杂志版式没有词汇浮层：整刊模式隐藏 Key Words 按钮，避免无效控件 */
+  const wordsBtn = $("#btn-gloss-words");
+  if (wordsBtn) wordsBtn.hidden = isIssue;
   /* 字体就绪后重算书体尺寸并重跑分页：避免回退字体度量偏大导致正文只占一小块或被裁掉 */
   if (document.fonts && document.fonts.ready) {
     document.fonts.ready.then(() => {
       if ($("#newspaper-modal").hidden || !sameOpen(currentOpen, open)) return;
       const keep = paperIndex;
-      viewport.innerHTML = issuePages(articles).join("");
+      viewport.innerHTML = (isIssue ? issueMagazinePages(articles, open) : issuePages(articles)).join("");
       sizeBook();
-      paginateFrontPages(articles);
+      if (isIssue) paginateMagazine(articles, open);
+      else paginateFrontPages(articles);
       paperIndex = Math.min(keep, Math.max(0, paperPages().length - 1));
       resetPaperPages();
       applyPaperIndicator();
@@ -146,13 +161,20 @@ function renderPaper(articles, open) {
 }
 
 function sameOpen(a, b) {
-  return Boolean(a && b && a.type === b.type && (a.id === b.id || a.weekKey === b.weekKey));
+  if (!a || !b || a.type !== b.type) return false;
+  if (a.type === "issue") return a.weekKey === b.weekKey && (a.ids?.join() || "") === (b.ids?.join() || "");
+  return a.id === b.id;
 }
 
-/* 阅读器当前打开的文章数组（整刊 = 一周所有文章；单篇 = 该篇）；未打开返回 []。
+/* 阅读器当前打开的文章数组（整刊 = 该期所有文章；单篇 = 该篇）；未打开返回 []。
    弹窗内导出按钮用：导出「正在看的这期」。 */
 export function currentOpenArticles() {
-  if (currentOpen?.type === "issue") return articlesOfWeek(currentOpen.weekKey);
+  if (currentOpen?.type === "issue") {
+    if (Array.isArray(currentOpen.ids) && currentOpen.ids.length) {
+      return currentOpen.ids.map((id) => state.articles.find((a) => a.id === id)).filter(Boolean);
+    }
+    return articlesOfWeek(currentOpen.weekKey);
+  }
   if (currentOpen?.type === "article") return state.articles.filter((a) => a.id === currentOpen.id);
   return [];
 }
@@ -160,8 +182,11 @@ export function currentOpenArticles() {
 /* 按记忆的打开模式重开（窗口缩放后保持内容与页码） */
 function reopenPaper() {
   const keep = paperIndex;
-  if (currentOpen?.type === "issue") openIssue(currentOpen.weekKey);
-  else if (currentOpen?.type === "article" && state.articles.some((a) => a.id === currentOpen.id)) openNewspaper(currentOpen.id);
+  if (currentOpen?.type === "issue") {
+    if (Array.isArray(currentOpen.ids) && currentOpen.ids.length) {
+      openIssueArticles(currentOpen.ids.map((id) => state.articles.find((a) => a.id === id)).filter(Boolean), currentOpen);
+    } else openIssue(currentOpen.weekKey);
+  } else if (currentOpen?.type === "article" && state.articles.some((a) => a.id === currentOpen.id)) openNewspaper(currentOpen.id);
   else return;
   const pages = paperPages();
   if (pages.length) {
@@ -169,6 +194,16 @@ function reopenPaper() {
     resetPaperPages();
     applyPaperIndicator();
   }
+}
+
+/* 跳页（封面头条 / Contents 行）：瞬间切换到目标页，不带翻页动画 */
+export function paperGoto(index) {
+  const pages = paperPages();
+  const target = Math.max(0, Math.min(Number(index) || 0, pages.length - 1));
+  if (paperTurning || target === paperIndex) return;
+  paperIndex = target;
+  resetPaperPages(pages);
+  applyPaperIndicator();
 }
 
 /* 本期词汇：可交互按钮，在当前头版上以浮层显示。 */
@@ -202,9 +237,13 @@ export function bindReaderEvents() {
     clearTimeout(paperResizeTimer);
     paperResizeTimer = setTimeout(reopenPaper, 120);
   });
-  /* 刊物阅读器：翻书动画 + 键盘翻页 */
+  /* 刊物阅读器：翻书动画 + 键盘翻页 + 封面/目录跳页 */
   $("#paper-prev").addEventListener("click", () => paperGo(-1));
   $("#paper-next").addEventListener("click", () => paperGo(1));
+  $("#newspaper-body").addEventListener("click", (e) => {
+    const row = e.target.closest("[data-goto-page]");
+    if (row) paperGoto(row.dataset.gotoPage);
+  });
   document.querySelectorAll(".paper-toggle").forEach((btn) =>
     btn.addEventListener("click", () => toggleGloss(btn.dataset.gloss))
   );

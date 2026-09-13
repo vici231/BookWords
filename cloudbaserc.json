@@ -1,0 +1,13 @@
+{
+  "envId": "{{env.CLOUDBASE_ENV_ID}}",
+  "functionRoot": ".",
+  "functions": [
+    {
+      "name": "{{env.CLOUDBASE_SERVICE_NAME}}",
+      "type": "HTTP",
+      "installDependency": true,
+      "runtime": "Nodejs20.19",
+      "timeout": 60
+    }
+  ]
+}

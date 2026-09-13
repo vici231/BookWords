@@ -87,9 +87,24 @@ export function newspaperCoverBody(article) {
     </div>`;
 }
 
-/* 周刊归档封面：与阅读器整刊第一页共用同一份目录数据。 */
+/* 周刊归档封面：蓝白月刊迷你封面（与阅读器整刊封面同一视觉语言）。 */
 export function newspaperIssueCoverBody(articles) {
-  return articleCoverBody((articles || []).filter(Boolean));
+  const list = (articles || []).filter(Boolean);
+  const weekLabel = list[0]?.weekLabel || dailyWeekInfo(list[0]?.generatedAt).label;
+  const volBase = Date.parse(list[0]?.weekKey || "");
+  const vol = Number.isFinite(volBase) ? Math.max(1, Math.round((volBase - Date.parse("2026-01-05")) / 604800000) + 1) : 1;
+  const targets = new Set();
+  list.forEach((a) => (a.targetWords || []).forEach((w) => w && targets.add(String(w).toLowerCase())));
+  const lines = list.slice(0, 3).map((a) => `<span>${esc(a.story?.title || a.title || "")}</span>`).join("");
+  return `
+    <div class="mag-mini-cover" aria-label="The Zhihu Review, ${list.length} stories">
+      <div class="mag-mini-top"><span>VOL.${String(vol).padStart(2, "0")}</span><span>${esc(weekLabel)}</span></div>
+      <div class="mag-mini-mast">The Zhihu Review</div>
+      <p class="mag-mini-sub">ZHIHU LEARNING DESK · ENGLISH EDITION</p>
+      <div class="mag-mini-orn"><span></span><i>✦</i><span></span></div>
+      <div class="mag-mini-lines">${lines || "<span>This issue is being prepared…</span>"}</div>
+      <div class="mag-mini-foot"><span>${list.length} ${list.length > 1 ? "STORIES" : "STORY"}</span><span>${targets.size} TARGET WORDS</span><span>OPEN →</span></div>
+    </div>`;
 }
 
 /* 分版刊物（单篇）：统一封面 → 头版。头版带 data-article-idx，正文分页由 pagination.js 处理。 */

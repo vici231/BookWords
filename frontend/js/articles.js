@@ -51,6 +51,7 @@ export function saveArticle(story, options = {}) {
     pos: word.pos || "",
     meaning_cn: word.meaning_cn || word.meaning || "",
     meaning_en: word.meaning_en || "",
+    phonetic: word.phonetic || "",
   }));
   const article = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -108,6 +109,27 @@ export function markArticleCompleted() {
   article.updatedAt = now;
   persist();
   emit("articles");
+}
+
+export function deleteArticle(articleId) {
+  const id = String(articleId || "");
+  const index = state.articles.findIndex((article) => article.id === id);
+  if (index < 0) return false;
+  state.articles.splice(index, 1);
+  for (const period of ["week", "month"]) {
+    const selections = state.periodicalSelections?.[period] || {};
+    Object.keys(selections).forEach((key) => {
+      selections[key] = (selections[key] || []).filter((selectedId) => selectedId !== id);
+      if (!selections[key].length) delete selections[key];
+    });
+  }
+  if (state.lastArticleId === id) {
+    state.lastArticleId = state.articles[0]?.id || "";
+    state.lastStory = state.articles[0]?.story || null;
+  }
+  persist();
+  emit("articles");
+  return true;
 }
 
 /* 当前练习/阅读指向的刊物：优先 lastArticleId，其次本周，最后最新一期 */

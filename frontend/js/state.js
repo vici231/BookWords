@@ -6,6 +6,7 @@ export const MAX_STORY_CARDS = 20;
 
 export const state = {
   pool: [],
+  targetSelection: new Set(),
   wordbook: [],
   wordbookSort: "time-desc",
   levels: [],           // [{id, label}]
@@ -16,12 +17,34 @@ export const state = {
   memoryScope: "pool",
   articleLanguage: "en",
   periodicalView: "daily",
-  fetchedModels: [],    // 由 /api/models 实时查询到的该 Key 可用模型
+  periodicalSelections: { week: {}, month: {} },
+  workflowStage: "words",
+  generationRoute: "zhihu",
+  coverageDays: 3,
+  coveragePlans: [],
+  coverageStatus: null,
+  groupCandidates: [],
+  selectedGroup: null,
+  lockedWords: new Set(),
+  excludedWords: new Set(),
+  groupVariantIndex: 0,
+  originalTopic: "",
+  customStyle: { genre: "daily-science", tone: "clear", structure: "scene-explain", length: 220 },
+  resultMode: "reading",
+  practiceMode: "target",
+  masteredWords: {},
+  recentMistakes: [],
+  practiceResults: {},
+  workflowError: null,
   settings: { api: { base_url: "", model: "", has_key: false, api_key_masked: "" }, zhihu: {}, theme: "paper" },
+  /* 本机凭证：只存在浏览器 localStorage，随每个请求发给后端（后端不落盘）。
+     仓库与部署包默认不含任何真实凭证。 */
+  credentials: { base_url: "", api_key: "", model: "", access_secret: "" },
   theme: "paper",
   search: "",
   pos: "",
   lastStory: null,
+  lastGeneration: null,
   articles: [],
   lastArticleId: "",
   practiceCompleted: false,
@@ -32,8 +55,8 @@ export const state = {
   auth: { token: "", user: null, registering: false },
   settingsUpdatedAt: "",
   generating: false,
-  /* 选题来源：auto 先按词汇池推荐题材；其余为手动来源。 */
-  source: "auto",
+  /* 当前选题来源；知乎强化路线由覆盖计划设置，今日创作使用 original。 */
+  source: "original",
   sourceSelection: null,
   sourceRecommendations: [],
   sourceRecommendationKey: "",
@@ -41,10 +64,8 @@ export const state = {
   zhihuHotCache: null,
   zhihuStoriesCache: null,
   zhihuKnowledgeCache: null,
-  /* /api/meta 下发的单一事实来源（避免前后端各硬编码一份） */
+  /* /api/meta 下发的单一事实来源 */
   minCards: 3,
-  providers: [],        // [{id, name, base_url}]
-  providerRules: { tokens: [], modelPrefixes: [] },
 };
 
 const listeners = new Map();

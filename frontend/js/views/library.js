@@ -3,7 +3,7 @@
 import { Api } from "../api.js";
 import { state } from "../state.js";
 import { $, esc, toast, wordbookMeaning, wordbookPos } from "../utils.js";
-import { saveToWordbook } from "./wordbook.js";
+import { saveToWordbook, removeFromWordbook } from "./wordbook.js";
 
 export function renderLibrary() {
   const list = $("#lib-list");
@@ -15,7 +15,7 @@ export function renderLibrary() {
     const key = String(w.word || "").toLowerCase();
     const saved = state.wordbook.some((item) => String(item.word || "").toLowerCase() === key);
     const level = w.level || (Array.isArray(w.levels) ? w.levels.join(" / ") : "");
-    return `<div class="lib-row"><span class="lib-row-main"><strong>${esc(w.word)}</strong><small>${esc(wordbookPos(w.pos))} · ${esc(wordbookMeaning(w))}</small></span>${level ? `<span class="lib-row-level">${esc(level)}</span>` : ""}${saved ? '<span class="wb-in-pool is-saved">已收藏</span>' : `<button class="btn-link lib-row-save" type="button" data-word="${esc(w.word)}">♡ 收藏</button>`}</div>`;
+    return `<div class="lib-row"><span class="lib-row-main"><strong>${esc(w.word)}</strong><small>${esc(wordbookPos(w.pos))} · ${esc(wordbookMeaning(w))}</small></span>${level ? `<span class="lib-row-level">${esc(level)}</span>` : ""}${saved ? `<button class="btn-link lib-row-unsave wb-in-pool is-saved" type="button" data-word="${esc(w.word)}" title="点击取消收藏">已收藏</button>` : `<button class="btn-link lib-row-save" type="button" data-word="${esc(w.word)}">♡ 收藏</button>`}</div>`;
   }).join("");
   list.querySelectorAll(".lib-row-save").forEach((button) => button.addEventListener("click", () => {
     const word = state.libraryCards.find((item) => item.word === button.dataset.word);
@@ -23,21 +23,30 @@ export function renderLibrary() {
     saveToWordbook(word);
     renderLibrary();
   }));
+  list.querySelectorAll(".lib-row-unsave").forEach((button) => button.addEventListener("click", () => {
+    removeFromWordbook(button.dataset.word);
+    toast(`「${button.dataset.word}」已取消收藏`);
+    renderLibrary();
+  }));
 }
 
-/* 刷新库展示：有搜索词→搜索；否则按 kind（daily/random）取一组。 */
-export async function refreshLibrary(kind = "daily") {
+/* 刷新库展示：有搜索词→搜索；kind=browse→整级词表（默认）；
+   kind=daily/random→今日一组。 */
+export async function refreshLibrary(kind = "browse") {
   let words = [];
   try {
     const q = state.search.trim();
     if (q || state.pos) {
-      const r = await Api.searchWords(q, state.level, 60, state.pos);
+      const r = await Api.searchWords(q, state.level, 4000, state.pos);
       words = r.words || [];
     } else if (kind === "random") {
       const r = await Api.randomWords(state.level, 12);
       words = r.words || [];
-    } else {
+    } else if (kind === "daily") {
       const r = await Api.dailyWords(state.level, 12);
+      words = r.words || [];
+    } else {
+      const r = await Api.searchWords("", state.level, 4000, "");
       words = r.words || [];
     }
   } catch (err) {
@@ -112,15 +121,15 @@ export function bindLibraryEvents() {
   $("#search").addEventListener("input", (e) => {
     state.search = e.target.value;
     clearTimeout(t);
-    t = setTimeout(() => refreshLibrary("daily"), 150);
+    t = setTimeout(() => refreshLibrary("browse"), 150);
   });
   $("#word-level").addEventListener("change", (e) => {
     state.level = e.target.value;
-    refreshLibrary("daily");
+    refreshLibrary("browse");
   });
   $("#pos-filter").addEventListener("change", (e) => {
     state.pos = e.target.value;
-    refreshLibrary("daily");
+    refreshLibrary("browse");
   });
   $("#btn-reset-filter").addEventListener("click", () => {
     state.level = "all";
@@ -129,7 +138,7 @@ export function bindLibraryEvents() {
     $("#word-level").value = "all";
     $("#pos-filter").value = "";
     $("#search").value = "";
-    refreshLibrary("daily");
+    refreshLibrary("browse");
   });
   /* 随机 / 今日：清空残留搜索词（例如从单词本详情跳转而来），确保列表不会卡在上一个词。 */
   const clearSearchBox = () => { state.search = ""; $("#search").value = ""; };
